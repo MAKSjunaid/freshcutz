@@ -35,11 +35,12 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         value: "*"
 
-  # ---- Frontend: plain HTML/CSS/JS, no build step ----------------------
+  # ---- Frontend: plain HTML/CSS/JS, no build step -----------------------
+  # Static sites don't take a "plan" field at all — there's no paid tier
+  # to opt out of, they're just always free on Render.
   - type: web
     name: freshcutz-frontend
     runtime: static
-    plan: free
     staticPublishPath: frontend
     buildCommand: "true"
     envVars: []
