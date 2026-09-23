@@ -9,6 +9,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
 import java.util.List;
@@ -35,6 +36,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiError> handleTooLarge(MaxUploadSizeExceededException ex, HttpServletRequest req) {
         return build(HttpStatus.PAYLOAD_TOO_LARGE, "Image is too large (max 2MB)", req, null);
+    }
+
+    /** This is a JSON-only API with no page at "/" — hitting the bare
+     * backend URL, or any other path nothing maps to (browsers/crawlers
+     * often probe /robots.txt or /favicon.ico automatically), is expected
+     * and not a real error, so it gets a plain 404 instead of falling
+     * into handleGeneric's 500 below. */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleNoResource(NoResourceFoundException ex, HttpServletRequest req) {
+        return build(HttpStatus.NOT_FOUND, "Nothing here — this is the FreshCutz API, try /api/products", req, null);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
