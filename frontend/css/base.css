@@ -8,6 +8,21 @@
   box-sizing: border-box;
 }
 
+/* Belt-and-suspenders fix for a whole class of bug: any element styled
+   with a class that sets its own `display` (e.g. .btn's display:
+   inline-flex) has the SAME CSS specificity as the browser's built-in
+   [hidden]{display:none} rule — so whichever one is defined later in the
+   stylesheet wins, and since author CSS always loads after the browser's
+   own rules, the class usually wins. That silently defeats
+   `element.hidden = true` in JS: the element stays visible, un-clickable
+   handlers and all, with nothing in the console to explain why. One
+   global !important rule here beats every class's specificity outright,
+   so `hidden` always means hidden, everywhere on the site, from now on —
+   no more chasing this one component at a time. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
