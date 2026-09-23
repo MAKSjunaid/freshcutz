@@ -24,7 +24,8 @@
   border-radius: var(--r-sm);
   border: 1.5px solid #e6dcc0;
   background: #fff;
-  font-size: 13px;
+  /* 16px minimum — under that, iOS Safari zooms the page in on tap. */
+  font-size: 16px;
 }
 
 .date-range-row span {
