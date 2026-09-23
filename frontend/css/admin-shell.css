@@ -209,7 +209,8 @@ body.admin {
   border-radius: var(--r-pill);
   border: 1.5px solid #e6dcc0;
   background: #fff;
-  font-size: 13.5px;
+  /* 16px minimum — under that, iOS Safari zooms the page in on tap. */
+  font-size: 16px;
 }
 
 .search-input:focus {
