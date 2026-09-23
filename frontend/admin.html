@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>FreshCutz Admin</title>
+<meta name="robots" content="noindex, nofollow" />
+<link rel="icon" href="images/logo.jpg" />
+<!-- Lets the admin "Add to Home Screen" (required on iPhone before push
+     notifications will work at all) and gives Web Push its icon. -->
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="images/logo.jpg" />
+<meta name="theme-color" content="#1c1712" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="stylesheet" href="css/variables.css" />
+<link rel="stylesheet" href="css/base.css" />
+<link rel="stylesheet" href="css/animations.css" />
+<link rel="stylesheet" href="css/components.css" />
+<link rel="stylesheet" href="css/cart.css" />
+<link rel="stylesheet" href="css/admin-shell.css" />
+<link rel="stylesheet" href="css/admin-cards.css" />
+<link rel="stylesheet" href="css/admin-sales.css" />
+<link rel="stylesheet" href="css/admin-customers.css" />
+</head>
+<body class="admin">
+
+  <!-- Login screen -->
+  <div class="login-screen" id="loginScreen">
+    <div class="login-card anim-scale-in">
+      <img src="images/logo.jpg" alt="FreshCutz" />
+      <h1>FreshCutz Admin</h1>
+      <p>Sign in to manage products &amp; orders</p>
+      <form id="loginForm">
+        <div class="field">
+          <label for="lg-username">Username</label>
+          <input id="lg-username" name="username" required autocomplete="username" />
+        </div>
+        <div class="field">
+          <label for="lg-password">Password</label>
+          <input id="lg-password" name="password" type="password" required autocomplete="current-password" />
+          <div class="error" id="loginError"></div>
+        </div>
+        <button class="btn btn-gold btn-block" id="loginBtn" type="submit">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Admin app -->
+  <div id="adminApp" hidden>
+    <header class="admin-topbar">
+      <div class="brand-text">
+        <div class="name">FRESHCUTZ ADMIN</div>
+      </div>
+      <div class="topbar-actions">
+        <div class="store-toggle">
+          <span class="store-toggle-label" id="storeToggleLabel">Online</span>
+          <label class="switch">
+            <input type="checkbox" id="storeOnlineToggle" checked />
+            <span class="track"></span>
+          </label>
+        </div>
+        <button class="btn btn-ghost btn-sm push-toggle-btn" id="pushToggleBtn" hidden title="Enable order alerts on this device">🔔</button>
+        <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
+      </div>
+    </header>
+
+    <div class="push-ios-banner" id="pushIosBanner" hidden>
+      <span>📲 To get order alerts on this iPhone: tap Share, then "Add to Home Screen" — then open FreshCutz Admin from your Home Screen and tap "Enable alerts".</span>
+      <button id="pushIosBannerClose" aria-label="Dismiss">✕</button>
+    </div>
+
+    <nav class="admin-tabs">
+      <button class="admin-tab active" data-view="orders">📦 Orders <span class="count-pill" id="newOrdersPill" hidden>0</span></button>
+      <button class="admin-tab" data-view="products">🍗 Products</button>
+      <button class="admin-tab" data-view="stats">📊 Sales</button>
+      <button class="admin-tab" data-view="customers">👥 Customers</button>
+    </nav>
+
+    <section class="admin-view active" id="view-orders">
+      <div class="search-row">
+        <input type="search" id="orderSearchInput" class="search-input" placeholder="🔎 Search by order ID, phone or name" />
+      </div>
+      <div class="admin-tabs" style="position:static;padding:0 0 var(--sp-3);background:transparent;border:none;" id="orderStatusFilter">
+        <button class="admin-tab" data-status="">All</button>
+        <button class="admin-tab active" data-status="NEW">New</button>
+        <button class="admin-tab" data-status="DELIVERED">Delivered</button>
+        <button class="admin-tab" data-status="CANCELLED">Cancelled</button>
+      </div>
+      <div id="ordersList"></div>
+    </section>
+
+    <section class="admin-view" id="view-products">
+      <div id="productsList"></div>
+      <button class="fab" id="addProductFab" aria-label="Add product">+</button>
+    </section>
+
+    <section class="admin-view" id="view-stats">
+      <div class="sales-toolbar">
+        <div class="date-range-row">
+          <input type="date" id="statsFrom" aria-label="From date" />
+          <span>to</span>
+          <input type="date" id="statsTo" aria-label="To date" />
+          <button class="btn btn-outline btn-sm" id="applyRangeBtn">Apply</button>
+        </div>
+        <div class="sales-actions-row">
+          <button class="btn btn-outline btn-sm" id="exportFilteredBtn">⬇ Export filtered</button>
+          <button class="btn btn-outline btn-sm" id="exportAllBtn">⬇ Export all</button>
+          <label class="btn btn-ghost btn-sm file-btn">
+            ⬆ Import
+            <input type="file" id="importFile" accept=".xlsx" hidden />
+          </label>
+        </div>
+      </div>
+      <div class="range-result" id="rangeResult" hidden></div>
+      <div class="import-result" id="importResult" hidden></div>
+      <div class="stats-grid" id="statsGrid"></div>
+    </section>
+
+    <section class="admin-view" id="view-customers">
+      <div class="search-row">
+        <input type="search" id="customerSearchInput" class="search-input" placeholder="🔎 Search by phone or name" />
+      </div>
+      <div id="customersList"></div>
+    </section>
+  </div>
+
+  <div id="sheetRoot"></div>
+  <div id="toastHost"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/toast.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/admin-auth.js"></script>
+  <script src="js/admin-store.js"></script>
+  <script src="js/admin-push.js"></script>
+  <script src="js/admin-products.js"></script>
+  <script src="js/admin-orders.js"></script>
+  <script src="js/admin-stats.js"></script>
+  <script src="js/admin-customers.js"></script>
+  <script src="js/admin-main.js"></script>
+</body>
+</html>

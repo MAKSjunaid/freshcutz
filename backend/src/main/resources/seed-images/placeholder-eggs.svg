@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1c1a15"/>
+      <stop offset="100%" stop-color="#302a1d"/>
+    </linearGradient>
+    <linearGradient id="gold2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#c9a13b"/>
+      <stop offset="50%" stop-color="#f0d98a"/>
+      <stop offset="100%" stop-color="#c9a13b"/>
+    </linearGradient>
+    <radialGradient id="egg" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0%" stop-color="#fffdf6"/>
+      <stop offset="55%" stop-color="#f6ecd8"/>
+      <stop offset="100%" stop-color="#e0c9a3"/>
+    </radialGradient>
+    <linearGradient id="basket" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8a5a35"/>
+      <stop offset="100%" stop-color="#6b4325"/>
+    </linearGradient>
+    <filter id="soft2" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <rect width="400" height="400" fill="url(#bg2)"/>
+
+  <!-- basket -->
+  <ellipse cx="200" cy="252" rx="118" ry="24" fill="#000" opacity="0.32" filter="url(#soft2)"/>
+  <path d="M92,214 Q200,258 308,214 L292,252 Q200,282 108,252 Z" fill="url(#basket)"/>
+  <path d="M104,222 Q200,254 296,222" stroke="#5a3a1f" stroke-width="2.5" fill="none" opacity="0.55"/>
+  <path d="M110,234 Q200,264 290,234" stroke="#5a3a1f" stroke-width="2.5" fill="none" opacity="0.45"/>
+
+  <!-- eggs -->
+  <g>
+    <ellipse cx="4" cy="208" rx="34" ry="4" fill="#000" opacity="0.2" filter="url(#soft2)"/>
+    <ellipse cx="150" cy="178" rx="30" ry="40" fill="url(#egg)" transform="rotate(-8 150 178)"/>
+    <ellipse cx="204" cy="164" rx="35" ry="46" fill="url(#egg)"/>
+    <ellipse cx="256" cy="182" rx="28" ry="37" fill="url(#egg)" transform="rotate(10 256 182)"/>
+    <ellipse cx="140" cy="160" rx="10" ry="14" fill="#ffffff" opacity="0.55"/>
+    <ellipse cx="194" cy="142" rx="11" ry="16" fill="#ffffff" opacity="0.55"/>
+    <ellipse cx="248" cy="166" rx="9" ry="13" fill="#ffffff" opacity="0.5"/>
+  </g>
+
+  <!-- sparkle accent -->
+  <g transform="translate(336,72)" fill="#fff" opacity="0.9">
+    <path d="M0,-11 L2.6,-2.6 L11,0 L2.6,2.6 L0,11 L-2.6,2.6 L-11,0 L-2.6,-2.6 Z"/>
+  </g>
+
+  <text x="200" y="300" font-family="Georgia, 'Times New Roman', serif" font-size="27" font-weight="700"
+        fill="url(#gold2)" text-anchor="middle" letter-spacing="2">FRESHCUTZ</text>
+  <text x="200" y="324" font-family="Arial, sans-serif" font-size="12.5" fill="#c9b37a" text-anchor="middle"
+        letter-spacing="0.5">Freshly Cut. Naturally Juicy.</text>
+  <text x="200" y="358" font-family="Arial, sans-serif" font-size="12" fill="#8a8172" text-anchor="middle">
+    Real photo coming soon — add one from Admin
+  </text>
+</svg>

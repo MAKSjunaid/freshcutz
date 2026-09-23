@@ -1,0 +1,45 @@
+# Render "Blueprint" — deploys both services in one click.
+# In the Render dashboard: New + -> Blueprint -> pick this GitHub repo.
+# See DEPLOYMENT.md for the full step-by-step walkthrough (Neon + GitHub +
+# Render), including which env vars you must fill in by hand (marked
+# "sync: false" below — Render will prompt you for these during setup).
+
+services:
+  # ---- Backend: Spring Boot, built and run from backend/Dockerfile ----
+  - type: web
+    name: freshcutz-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    healthCheckPath: /api/products
+    envVars:
+      # Paste these three from your Neon project's "Connection string"
+      # (Dashboard -> your project -> Connect). Neon gives you a single
+      # postgres:// URL — split it into these three pieces.
+      - key: SPRING_DATASOURCE_URL
+        sync: false
+      - key: SPRING_DATASOURCE_USERNAME
+        sync: false
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false
+      - key: SPRING_DATASOURCE_DRIVER
+        value: org.postgresql.Driver
+      # Change these to your own admin login before going live.
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Leave as * unless you want to lock the API to only your frontend's
+      # URL (e.g. https://freshcutz-frontend.onrender.com).
+      - key: CORS_ALLOWED_ORIGINS
+        value: "*"
+
+  # ---- Frontend: plain HTML/CSS/JS, no build step ----------------------
+  - type: web
+    name: freshcutz-frontend
+    runtime: static
+    plan: free
+    staticPublishPath: frontend
+    buildCommand: "true"
+    envVars: []

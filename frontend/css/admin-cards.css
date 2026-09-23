@@ -1,0 +1,245 @@
+/* ==========================================================================
+   Admin dashboard: stat cards, order cards, product cards, toggle switch,
+   floating add button. See admin-shell.css for the surrounding layout.
+   ========================================================================== */
+
+/* ---- Stat cards -------------------------------------------------------- */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-card .label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.stat-card .value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ink);
+  margin-top: 4px;
+}
+
+.stat-card .sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ---- Order card -------------------------------------------------------- */
+.order-card {
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--sp-3);
+  animation: fadeUp var(--dur-fast) var(--ease-out) both;
+}
+
+.order-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin-bottom: 8px;
+}
+
+.order-code-lbl {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.order-time {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.order-customer {
+  font-size: 13px;
+  margin: 6px 0;
+  line-height: 1.5;
+}
+
+.order-customer strong { display: block; font-size: 14px; }
+
+.order-items-list {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  background: #faf7f0;
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+
+.order-items-list div + div {
+  margin-top: 3px;
+}
+
+.order-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 800;
+  font-size: 15px;
+  margin: 8px 0;
+}
+
+.order-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+/* ---- Product admin card -------------------------------------------------- */
+.admin-product-card {
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+}
+
+.admin-product-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  flex: 0 0 auto;
+  position: relative;
+  background: #f1ecdd;
+}
+
+.admin-product-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumb-upload-btn {
+  position: absolute;
+  inset: auto 0 0 0;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 9.5px;
+  text-align: center;
+  padding: 3px 0;
+}
+
+.admin-product-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-product-main .name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-product-main .name-row .name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.admin-product-prices {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.admin-product-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+/* Toggle switch */
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch .track {
+  position: absolute;
+  inset: 0;
+  background: #ddd1ae;
+  border-radius: var(--r-pill);
+  transition: background var(--dur-fast);
+}
+
+.switch .track::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 2px;
+  top: 2px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform var(--dur-fast) var(--ease-out);
+  box-shadow: var(--shadow-sm);
+}
+
+.switch input:checked + .track {
+  background: var(--success);
+}
+
+.switch input:checked + .track::before {
+  transform: translateX(18px);
+}
+
+.fab {
+  position: fixed;
+  right: var(--sp-4);
+  bottom: calc(var(--sp-4) + var(--safe-bottom));
+  z-index: 600;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--gold-light), var(--gold) 65%, var(--gold-dark));
+  color: var(--ink);
+  font-size: 26px;
+  box-shadow: var(--shadow-gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fab:active { transform: scale(0.92); }
+
+@media (min-width: 640px) {
+  .stats-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (min-width: 860px) {
+  .order-card, .admin-product-card { padding: var(--sp-5); }
+}

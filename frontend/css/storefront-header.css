@@ -1,0 +1,238 @@
+/* ==========================================================================
+   Customer storefront: sticky header, hero banner, category chip bar.
+   Mobile-first — see storefront-grid.css for the product grid itself.
+   ========================================================================== */
+
+body.storefront {
+  padding-bottom: calc(var(--bottom-bar-h) + var(--safe-bottom) + 10px);
+}
+
+/* ---- Header --------------------------------------------------------- */
+/* On iOS/Android PWAs the status bar can sit on top of a plain sticky
+   header and crop the logo/icons when the page scrolls under it — padding
+   the header by the safe-area inset (0 on ordinary browsers) fixes that. */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 500;
+  background: var(--ink);
+  color: var(--text-on-dark);
+  height: calc(var(--header-h) + var(--safe-top));
+  padding-top: var(--safe-top);
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.25);
+}
+
+.site-header .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+/* ---- Store offline banner --------------------------------------------- */
+.store-offline-banner {
+  position: sticky;
+  top: calc(var(--header-h) + var(--safe-top));
+  z-index: 490;
+  background: #fdecea;
+  color: #a83229;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  padding: 9px var(--sp-4);
+  border-bottom: 1px solid #f3c5bd;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-logo {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid var(--gold);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  transform: scale(1.35);
+}
+
+.brand-text .name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15.5px;
+  color: var(--gold-light);
+  letter-spacing: 0.02em;
+  transition: font-size 420ms var(--ease-out);
+}
+
+.brand-text .tag {
+  font-size: 9.5px;
+  color: var(--text-on-dark-muted);
+  display: none;
+  transition: font-size 420ms var(--ease-out);
+}
+
+/* Once the page has scrolled a bit, the brand text eases down to a
+   slightly smaller size — same color and full opacity, just more compact. */
+.site-header.is-scrolled .brand-text .name {
+  font-size: 14px;
+}
+
+.site-header.is-scrolled .brand-text .tag {
+  font-size: 8.5px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.icon-btn {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-on-dark);
+  font-size: 15px;
+  transition: background var(--dur-fast);
+}
+
+.icon-btn:active { transform: scale(0.92); }
+
+.cart-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 800;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  animation: bounceIn 400ms var(--ease-out);
+}
+
+/* ---- Hero ------------------------------------------------------------ */
+.hero {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 20% 20%, #2a2114 0%, var(--ink) 60%);
+  color: var(--text-on-dark);
+  padding: var(--sp-6) 0 var(--sp-5);
+  text-align: center;
+  /* Only the bottom edge is rounded — it sits flush under the header and
+     flush to the screen edges, just curving where it meets the page below. */
+  border-radius: 0 0 var(--r-xl) var(--r-xl);
+  box-shadow: 0 12px 24px -12px rgba(0, 0, 0, 0.35);
+}
+
+.hero h1 {
+  font-size: 26px;
+  color: #fff;
+}
+
+.hero h1 span { color: var(--gold-light); }
+
+.hero p {
+  margin-top: var(--sp-2);
+  color: var(--text-on-dark-muted);
+  font-size: 13.5px;
+  max-width: 460px;
+  margin-inline: auto;
+}
+
+.hero-badges {
+  margin-top: var(--sp-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.hero-badges .chip {
+  background: rgba(201, 161, 59, 0.14);
+  border: 1px solid rgba(201, 161, 59, 0.4);
+  color: var(--gold-light);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+}
+
+/* ---- Category chips ---------------------------------------------------- */
+/* iOS-style frosted glass: translucent background + blur, so the page
+   scrolling underneath is faintly visible through it, with a rounded
+   bottom edge instead of a hard-edged bar. */
+.category-bar {
+  position: sticky;
+  top: calc(var(--header-h) + var(--safe-top));
+  z-index: 400;
+  background: rgba(250, 247, 240, 0.42);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 1px 0 rgba(23, 20, 15, 0.06);
+  padding: 7px 0;
+}
+
+.category-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 var(--sp-4);
+  scrollbar-width: none;
+}
+
+.category-scroll::-webkit-scrollbar { display: none; }
+
+.cat-chip {
+  flex: 0 0 auto;
+  padding: 6px 13px;
+  border-radius: var(--r-pill);
+  background: #fff;
+  border: 1.5px solid #e6dcc0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+
+.cat-chip.active {
+  background: var(--ink);
+  color: var(--gold-light);
+  border-color: var(--ink);
+}
+
+/* ---- Responsive scale-up ---------------------------------------------- */
+@media (min-width: 640px) {
+  .brand-text .tag { display: block; }
+  .hero h1 { font-size: 32px; }
+  .hero p { font-size: 14.5px; }
+}
+
+@media (min-width: 860px) {
+  .hero { padding: var(--sp-7) 0 var(--sp-6); }
+}

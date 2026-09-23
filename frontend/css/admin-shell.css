@@ -1,0 +1,218 @@
+/* ==========================================================================
+   Admin dashboard shell: login screen, top bar, tab navigation, view
+   switching. See admin-cards.css for stats/order/product card styling.
+   ========================================================================== */
+
+body.admin {
+  background: #f4f1e8;
+  padding-bottom: var(--sp-6);
+}
+
+/* ---- Login screen ------------------------------------------------------- */
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 30% 20%, #2a2114, var(--ink) 65%);
+  padding: var(--sp-4);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg-card);
+  border-radius: var(--r-lg);
+  padding: var(--sp-6) var(--sp-5);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+
+.login-card img {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  margin: 0 auto var(--sp-3);
+  border: 2px solid var(--gold);
+}
+
+.login-card h1 {
+  font-size: 20px;
+  margin-bottom: var(--sp-1);
+}
+
+.login-card p {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: var(--sp-5);
+}
+
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  text-align: left;
+}
+
+/* ---- Top bar -------------------------------------------------------- */
+/* Fixed height (rather than padding driving it) so .admin-tabs below can
+   stick at exactly `--header-h` with no gap/overlap — a mismatch there is
+   what made the tab row visibly creep and jitter while scrolling,
+   especially on mobile. translateZ(0) forces both bars onto their own
+   compositor layer, which is what stops mobile Safari/Chrome from
+   re-flowing (and visibly shaking) stacked sticky elements on scroll. */
+.admin-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 500;
+  background: var(--ink);
+  color: var(--text-on-dark);
+  height: var(--header-h);
+  padding: 0 var(--sp-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transform: translateZ(0);
+}
+
+.admin-topbar .brand-text .name { color: var(--gold-light); font-size: 16px; }
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.store-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-on-dark);
+}
+
+.push-toggle-btn {
+  padding: 6px 10px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.push-toggle-btn.is-active {
+  background: rgba(240, 217, 138, 0.25);
+  border-color: var(--gold-light);
+}
+
+/* [hidden] must come after (or win specificity over) the display:flex
+   rule below, or toggling the `hidden` attribute in JS has no visible
+   effect — the browser's own [hidden]{display:none} loses the cascade
+   to our later, equal-specificity .push-ios-banner{display:flex}. */
+.push-ios-banner[hidden] {
+  display: none;
+}
+
+.push-ios-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: #fdf6e3;
+  color: #7a5c00;
+  font-size: 12.5px;
+  padding: 10px var(--sp-4);
+  border-bottom: 1px solid #eadfad;
+}
+
+.push-ios-banner button {
+  flex: 0 0 auto;
+  background: none;
+  color: inherit;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+/* The shared .btn-ghost style (near-transparent dark tint + dark text) is
+   meant for light backgrounds — on this dark topbar it was nearly
+   invisible, so give the logout button its own light, visible styling. */
+.admin-topbar .btn-ghost {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-on-dark);
+  border: 1.5px solid rgba(240, 217, 138, 0.35);
+}
+
+.admin-topbar .btn-ghost:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.admin-tabs {
+  position: sticky;
+  top: var(--header-h);
+  z-index: 400;
+  display: flex;
+  gap: 6px;
+  background: #f4f1e8;
+  padding: 10px var(--sp-4);
+  overflow-x: auto;
+  border-bottom: 1px solid #e6dcc0;
+  transform: translateZ(0);
+}
+
+.admin-tab {
+  flex: 0 0 auto;
+  padding: 9px 16px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: #fff;
+  border: 1.5px solid #e6dcc0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-tab.active {
+  background: var(--ink);
+  color: var(--gold-light);
+  border-color: var(--ink);
+}
+
+.admin-tab .count-pill {
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+}
+
+.admin-view {
+  display: none;
+  padding: var(--sp-4);
+  max-width: var(--max-width);
+  margin: 0 auto;
+}
+
+.admin-view.active {
+  display: block;
+  animation: fadeIn var(--dur-med) var(--ease-out) both;
+}
+
+/* ---- Search box (Orders + Customers tabs) ------------------------------- */
+.search-row {
+  margin-bottom: var(--sp-3);
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--r-pill);
+  border: 1.5px solid #e6dcc0;
+  background: #fff;
+  font-size: 13.5px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--gold);
+}

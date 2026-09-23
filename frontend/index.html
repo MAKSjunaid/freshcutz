@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>FreshCutz — Freshly Cut. Naturally Juicy.</title>
+<meta name="description" content="Order fresh, hygienically packed chicken and farm eggs online. Freshly cut to order, delivered to your door." />
+<link rel="icon" href="images/logo.jpg" />
+<link rel="stylesheet" href="css/variables.css" />
+<link rel="stylesheet" href="css/base.css" />
+<link rel="stylesheet" href="css/animations.css" />
+<link rel="stylesheet" href="css/components.css" />
+<link rel="stylesheet" href="css/storefront-header.css" />
+<link rel="stylesheet" href="css/storefront-grid.css" />
+<link rel="stylesheet" href="css/cart.css" />
+</head>
+<body class="storefront">
+
+  <header class="site-header">
+    <div class="container">
+      <div class="brand">
+        <span class="brand-logo"><img src="images/logo.jpg" alt="FreshCutz logo" /></span>
+        <div class="brand-text">
+          <div class="name">FRESHCUTZ</div>
+          <div class="tag">Freshly Cut. Naturally Juicy.</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a class="icon-btn" id="whatsappLink" href="#" target="_blank" rel="noopener" aria-label="Chat on WhatsApp">💬</a>
+        <button class="icon-btn" id="cartIconBtn" aria-label="Open cart">
+          🛒
+          <span class="cart-count anim-scale-in" id="cartCount" hidden>0</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="store-offline-banner" id="storeOfflineBanner" hidden>
+    🔴 We're currently offline and not accepting new orders right now.
+  </div>
+
+  <section class="hero">
+    <div class="container">
+      <h1 class="anim-fade-up">Fresh Chicken, <span>Cut to Order</span></h1>
+      <p class="anim-fade-up">No frozen stock, no shortcuts — order before 10 PM for next morning delivery.</p>
+      <div class="hero-badges anim-fade-up">
+        <span class="chip">✅ Halal Certified</span>
+        <span class="chip">🧊 Never Frozen</span>
+        <span class="chip">🚚 Free Delivery</span>
+        <span class="chip">🧼 Hygienic Packaging</span>
+      </div>
+    </div>
+  </section>
+
+  <nav class="category-bar">
+    <div class="category-scroll" id="categoryScroll"></div>
+  </nav>
+
+  <main class="catalog container">
+    <div id="productGrid" class="product-grid" aria-live="polite"></div>
+    <div id="emptyState" class="empty-state" hidden>
+      <div class="icon">🐔</div>
+      <p>No products available right now. Please check back soon.</p>
+    </div>
+  </main>
+
+  <div class="cart-bar" id="cartBar">
+    <div class="cart-bar-info">
+      <span class="count" id="cartBarCount">0 items</span>
+      <span class="total" id="cartBarTotal">₹0</span>
+    </div>
+    <button class="btn btn-gold" id="viewCartBtn">View Cart →</button>
+  </div>
+
+  <div id="sheetRoot"></div>
+  <div id="toastHost"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/toast.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/storefront.js"></script>
+  <script src="js/storefront-sync.js"></script>
+  <script src="js/store-status.js"></script>
+  <script src="js/checkout.js"></script>
+</body>
+</html>

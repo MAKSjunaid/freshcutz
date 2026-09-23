@@ -1,0 +1,277 @@
+/* ==========================================================================
+   Cart bottom bar + cart/checkout sheet. Mobile-first: the panel is a
+   full-height bottom sheet on phones, and becomes a right-hand drawer
+   from tablet width up.
+   ========================================================================== */
+
+.cart-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  /* Lifted a little off the very bottom edge instead of sitting flush
+     against it (which read as too close to/crowded by the phone's own
+     bottom UI), while still clearing the safe area on notched devices. */
+  bottom: calc(var(--sp-2) + var(--safe-bottom));
+  z-index: 700;
+  background: var(--ink);
+  color: #fff;
+  padding: 12px var(--sp-4);
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  border-radius: var(--r-lg);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.28);
+  animation: fadeUp var(--dur-med) var(--ease-out) both;
+}
+
+.cart-bar.show { display: flex; }
+
+.cart-bar-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cart-bar-info .count {
+  font-size: 11.5px;
+  color: var(--text-on-dark-muted);
+}
+
+.cart-bar-info .total {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--gold-light);
+}
+
+.cart-bar .btn {
+  flex: 0 0 auto;
+}
+
+/* ---- Panel shell (cart + checkout share this) -------------------------- */
+.sheet {
+  position: fixed;
+  z-index: 850;
+  background: var(--bg-page);
+  display: flex;
+  flex-direction: column;
+  inset: auto 0 0 0;
+  max-height: 92vh;
+  border-radius: 20px 20px 0 0;
+  animation: slideUpSheet var(--dur-med) var(--ease-out) both;
+  box-shadow: var(--shadow-lg);
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-4);
+  border-bottom: 1px solid #eee3cc;
+  flex: 0 0 auto;
+}
+
+.sheet-header h2 {
+  font-size: 18px;
+}
+
+.sheet-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(23, 20, 15, 0.06);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.sheet-body {
+  overflow-y: auto;
+  padding: var(--sp-4);
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.sheet-footer {
+  padding: var(--sp-4);
+  border-top: 1px solid #eee3cc;
+  background: var(--bg-card);
+  flex: 0 0 auto;
+}
+
+/* ---- Cart line item ------------------------------------------------- */
+.cart-item {
+  display: flex;
+  gap: var(--sp-3);
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  box-shadow: var(--shadow-sm);
+  animation: fadeUp var(--dur-fast) var(--ease-out) both;
+}
+
+.cart-item img {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.cart-item-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cart-item-name {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.cart-item-variant {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.cart-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.cart-item-price {
+  font-weight: 800;
+  font-size: 13.5px;
+}
+
+.remove-link {
+  font-size: 11.5px;
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* ---- Summary rows ------------------------------------------------------ */
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  padding: 3px 0;
+}
+
+.summary-row.total {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+  border-top: 1px dashed #ddd1ae;
+  margin-top: 6px;
+  padding-top: 10px;
+}
+
+/* ---- Success screen ---------------------------------------------------- */
+.order-success {
+  text-align: center;
+  padding: var(--sp-6) var(--sp-4);
+}
+
+.success-check {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
+  font-size: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--sp-4);
+  animation: checkPop 480ms var(--ease-out) both;
+}
+
+.success-check::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--success);
+  animation: ringPulse 900ms var(--ease-out) 420ms both;
+}
+
+/* Order ID: a small, legible chip — not the decorative display serif
+   used for headings, which read as oversized for a reference number. */
+.order-id-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f4f1e8;
+  border: 1px solid #e6dcc0;
+  border-radius: var(--r-pill);
+  padding: 6px 14px;
+  margin-top: 10px;
+}
+
+.order-id-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.order-id-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.order-summary-list {
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+  box-shadow: var(--shadow-sm);
+}
+
+.order-notes {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px dashed #e6dcc0;
+  font-size: 12.5px;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.order-notes-label {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.screenshot-hint {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: var(--sp-3);
+}
+
+/* ---- Responsive: right-hand drawer from tablet up ----------------------- */
+@media (min-width: 720px) {
+  .sheet {
+    inset: 0 0 0 auto;
+    width: 420px;
+    max-height: 100vh;
+    border-radius: 0;
+    animation: slideInRight var(--dur-med) var(--ease-out) both;
+  }
+
+  .cart-bar {
+    left: auto;
+    right: var(--sp-5);
+    bottom: var(--sp-5);
+    max-width: 380px;
+  }
+}

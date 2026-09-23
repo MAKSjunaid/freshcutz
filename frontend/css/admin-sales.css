@@ -1,0 +1,66 @@
+/* ==========================================================================
+   Sales tab: date-range filter, export/import toolbar, and the import
+   result panel. Split out of admin-cards.css to keep that file smaller.
+   ========================================================================== */
+
+.sales-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.date-range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.date-range-row input[type="date"] {
+  flex: 1 1 130px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: var(--r-sm);
+  border: 1.5px solid #e6dcc0;
+  background: #fff;
+  font-size: 13px;
+}
+
+.date-range-row span {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.sales-actions-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.file-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.range-result,
+.import-result {
+  margin-bottom: var(--sp-4);
+}
+
+.import-errors {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #ddd1ae;
+  font-size: 11.5px;
+  color: var(--danger);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+@media (min-width: 640px) {
+  .date-range-row { flex-wrap: nowrap; }
+}

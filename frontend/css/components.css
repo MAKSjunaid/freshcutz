@@ -1,0 +1,187 @@
+/* ==========================================================================
+   Reusable UI components shared by the storefront and admin panel:
+   buttons, badges, inputs, toasts, modals/sheets.
+   ========================================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: 12px 20px;
+  border-radius: var(--r-pill);
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), opacity var(--dur-fast);
+  min-height: 44px;
+}
+
+.btn:active {
+  transform: scale(0.96);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn-gold {
+  background: linear-gradient(135deg, var(--gold-light), var(--gold) 60%, var(--gold-dark));
+  color: var(--ink);
+  box-shadow: var(--shadow-gold);
+}
+
+.btn-gold:hover { box-shadow: 0 10px 26px rgba(201, 161, 59, 0.45); }
+
+.btn-dark {
+  background: var(--ink);
+  color: var(--text-on-dark);
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1.5px solid var(--gold);
+  color: var(--ink);
+}
+
+.btn-ghost {
+  background: rgba(23, 20, 15, 0.05);
+  color: var(--text-main);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-sm {
+  padding: 8px 14px;
+  font-size: 13px;
+  min-height: 36px;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.badge-new { background: #fde8d8; color: #b5570c; }
+.badge-delivered { background: #dcf3e6; color: var(--success); }
+.badge-cancelled { background: #f6dada; color: var(--danger); }
+.badge-off { background: #eee; color: #888; }
+.badge-live { background: #dcf3e6; color: var(--success); }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--charcoal);
+}
+
+.field input,
+.field select,
+.field textarea {
+  border: 1.5px solid #e3dcc9;
+  border-radius: var(--r-sm);
+  padding: 11px 13px;
+  font-size: 15px;
+  background: #fff;
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
+  width: 100%;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(201, 161, 59, 0.2);
+}
+
+.field .hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.field .error {
+  font-size: 12px;
+  color: var(--danger);
+  min-height: 14px;
+}
+
+.card {
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Toasts */
+#toastHost {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--bottom-bar-h) + var(--safe-bottom) + 14px);
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(92vw, 380px);
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: var(--ink);
+  color: var(--text-on-dark);
+  padding: 12px 16px;
+  border-radius: var(--r-sm);
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: fadeUp var(--dur-med) var(--ease-out) both;
+}
+
+.toast.success { border-left: 4px solid var(--success); }
+.toast.error { border-left: 4px solid var(--danger); }
+
+/* Modal / overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 13, 9, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 800;
+  animation: fadeIn var(--dur-med) var(--ease-out) both;
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--sp-7) var(--sp-4);
+  color: var(--text-muted);
+}
+
+.empty-state .icon {
+  font-size: 40px;
+  margin-bottom: var(--sp-2);
+}
