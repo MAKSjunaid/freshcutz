@@ -72,5 +72,32 @@
     Cart.syncWithCatalog(fresh);
   }
 
-  setInterval(refreshProducts, POLL_MS);
+  /* Only poll while this tab is actually visible — a backgrounded or
+   * minimized tab was previously still fetching the full catalog every
+   * 15 seconds forever, which is exactly the kind of always-on traffic
+   * that ran up the database's monthly transfer allowance. Checks once
+   * immediately on switching back, so a change made while away shows up
+   * right away instead of waiting for the next 15-second tick. */
+  let pollTimer = null;
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(refreshProducts, POLL_MS);
+  }
+
+  function stopPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stopPolling();
+    } else {
+      refreshProducts();
+      startPolling();
+    }
+  });
+
+  if (!document.hidden) startPolling();
 })();
