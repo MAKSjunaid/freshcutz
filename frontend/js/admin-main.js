@@ -7,6 +7,7 @@
   const views = document.querySelectorAll(".admin-view");
   const POLL_MS = 15000;
   let pollTimer = null;
+  let loggedIn = false;
 
   function switchTo(viewName) {
     tabs.forEach((t) => t.classList.toggle("active", t.dataset.view === viewName));
@@ -33,11 +34,31 @@
   }
 
   document.addEventListener("freshcutz:login", () => {
+    loggedIn = true;
     window.AdminOrders?.refresh();
     window.AdminStats?.refresh();
     window.AdminStore?.refresh();
     startPolling();
   });
 
-  document.addEventListener("freshcutz:logout", stopPolling);
+  document.addEventListener("freshcutz:logout", () => {
+    loggedIn = false;
+    stopPolling();
+  });
+
+  /* Same reasoning as the customer page's background-tab pause (see
+   * storefront-sync.js): don't keep polling Orders/Stats every 15 seconds
+   * while this tab is backgrounded. Gated on loggedIn so this can't start
+   * polling early if the tab becomes visible again while still sitting on
+   * the login screen. */
+  document.addEventListener("visibilitychange", () => {
+    if (!loggedIn) return;
+    if (document.hidden) {
+      stopPolling();
+    } else {
+      window.AdminOrders?.refresh();
+      window.AdminStats?.refresh();
+      startPolling();
+    }
+  });
 })();
