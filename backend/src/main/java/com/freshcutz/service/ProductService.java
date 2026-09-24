@@ -21,16 +21,22 @@ public class ProductService {
         this.productRepository = productRepository;
     }
 
+    /** Deliberately uses listViewForCustomers() (a lighter row that never
+     * selects imageData), not findByEnabledTrueOrderByDisplayOrderAscIdAsc()
+     * — see ProductListRow for why. The storefront polls this every 15
+     * seconds, so this is the single hottest query in the whole app. */
     @Transactional(readOnly = true)
     public List<ProductResponse> listForCustomers() {
-        return productRepository.findByEnabledTrueOrderByDisplayOrderAscIdAsc().stream()
+        return productRepository.listViewForCustomers().stream()
                 .map(ProductResponse::from)
                 .collect(Collectors.toList());
     }
 
+    /** Same reasoning as listForCustomers() above — the admin Products tab
+     * shows the same images/prices and hits the same query shape. */
     @Transactional(readOnly = true)
     public List<ProductResponse> listForAdmin() {
-        return productRepository.findAllByOrderByDisplayOrderAscIdAsc().stream()
+        return productRepository.listViewForAdmin().stream()
                 .map(ProductResponse::from)
                 .collect(Collectors.toList());
     }
