@@ -9,6 +9,7 @@ window.StoreStatus = (() => {
   const POLL_MS = 15000;
   const banner = document.getElementById("storeOfflineBanner");
   let online = true;
+  let pollTimer = null;
 
   function apply() {
     if (banner) banner.hidden = online;
@@ -25,8 +26,29 @@ window.StoreStatus = (() => {
     }
   }
 
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(check, POLL_MS);
+  }
+
+  function stopPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  /* Same reasoning as storefront-sync.js: don't keep polling a
+   * backgrounded/minimized tab every 15 seconds forever. */
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stopPolling();
+    } else {
+      check();
+      startPolling();
+    }
+  });
+
   check();
-  setInterval(check, POLL_MS);
+  startPolling();
 
   return { isOnline: () => online };
 })();
