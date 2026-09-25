@@ -175,6 +175,24 @@
   padding-top: 10px;
 }
 
+/* ---- Saved-address summary (returning customer, delivery step) --------- */
+.address-summary-card {
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-sm);
+}
+
+.address-summary-row {
+  font-size: 13.5px;
+  color: var(--text-main);
+  line-height: 1.5;
+}
+
+.address-summary-row + .address-summary-row {
+  margin-top: 4px;
+}
+
 /* ---- Success screen ---------------------------------------------------- */
 .order-success {
   text-align: center;
