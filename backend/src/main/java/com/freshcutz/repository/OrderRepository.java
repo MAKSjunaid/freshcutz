@@ -11,7 +11,7 @@ import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
-    /* @EntityGraph loads the lazy `items` collection in the same Query
+    /* @EntityGraph loads the lazy `items` collection in the same query
      * instead of leaving it as a lazy proxy. Without it, code that reads
      * an order's items after the fetching transaction has closed (as the
      * xlsx export does) hits "could not initialize proxy - no Session". */
@@ -29,6 +29,13 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
      * it's admin-only). Deliberately a targeted query rather than loading
      * every order for this phone number just to read one row. */
     Optional<Order> findFirstByPhoneOrderByCreatedAtDesc(String phone);
+
+    /** Full order history for the customer-facing "My Orders" screen (see
+     * CustomerService.ordersByPhone) — every order for this phone, unlike
+     * findFirstByPhoneOrderByCreatedAtDesc above which only wants the
+     * latest one for address prefill. */
+    @EntityGraph(attributePaths = "items")
+    List<Order> findByPhoneOrderByCreatedAtDesc(String phone);
 
     List<Order> findByCreatedAtGreaterThanEqualAndStatusNot(Instant from, OrderStatus excludedStatus);
 
