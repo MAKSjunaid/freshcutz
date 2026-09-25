@@ -257,12 +257,13 @@
   });
 
   function updateCartBadges() {
+    // The header used to also carry a cart-count badge next to a cart
+    // icon; that icon's gone now (see profile.js) since the bottom
+    // cart-bar below already appears the moment something's added, so
+    // this only needs to keep that bar's own count/total in sync.
     const count = Cart.getLineCount(); // distinct items in the cart, not total quantity
     const total = Cart.getTotal();
-    const countEl = document.getElementById("cartCount");
     const barEl = document.getElementById("cartBar");
-    countEl.textContent = count;
-    countEl.hidden = count === 0;
     barEl.classList.toggle("show", count > 0);
     document.getElementById("cartBarCount").textContent = `${count} item${count === 1 ? "" : "s"}`;
     document.getElementById("cartBarTotal").textContent = Utils.formatMoney(total);
