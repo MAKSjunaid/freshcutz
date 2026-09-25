@@ -1,10 +1,15 @@
 package com.freshcutz.service;
 
+import com.freshcutz.dto.CustomerAddressUpdateRequest;
 import com.freshcutz.dto.CustomerLookupResponse;
+import com.freshcutz.dto.CustomerOrderResponse;
 import com.freshcutz.dto.CustomerSummaryResponse;
 import com.freshcutz.dto.OrderResponse;
+import com.freshcutz.entity.Customer;
 import com.freshcutz.entity.Order;
 import com.freshcutz.entity.OrderStatus;
+import com.freshcutz.exception.BadRequestException;
+import com.freshcutz.repository.CustomerRepository;
 import com.freshcutz.repository.OrderRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,9 +32,11 @@ import java.util.stream.Collectors;
 public class CustomerService {
 
     private final OrderRepository orderRepository;
+    private final CustomerRepository customerRepository;
 
-    public CustomerService(OrderRepository orderRepository) {
+    public CustomerService(OrderRepository orderRepository, CustomerRepository customerRepository) {
         this.orderRepository = orderRepository;
+        this.customerRepository = customerRepository;
     }
 
     @Transactional(readOnly = true)
@@ -81,15 +88,111 @@ public class CustomerService {
         if (normalized.isBlank()) {
             return CustomerLookupResponse.builder().found(false).build();
         }
-        return orderRepository.findFirstByPhoneOrderByCreatedAtDesc(normalized)
-                .map(o -> CustomerLookupResponse.builder()
+
+        return customerRepository.findById(normalized)
+                .map(c -> CustomerLookupResponse.builder()
                         .found(true)
-                        .name(o.getCustomerName())
-                        .flatNo(o.getFlatNo())
-                        .addressLine(o.getAddressLine())
-                        .landmark(o.getLandmark())
+                        .name(c.getName())
+                        .flatNo(c.getFlatNo())
+                        .addressLine(c.getAddressLine())
+                        .landmark(c.getLandmark())
                         .build())
-                .orElseGet(() -> CustomerLookupResponse.builder().found(false).build());
+                // No profile row yet (a customer who ordered before this table
+                // existed) — fall back to their most recent order, same as
+                // before. It gets a real profile row the moment they place
+                // their next order (see upsertFromOrder) or edit their
+                // address, so this fallback is only ever a one-time thing.
+                .orElseGet(() -> orderRepository.findFirstByPhoneOrderByCreatedAtDesc(normalized)
+                        .map(o -> CustomerLookupResponse.builder()
+                                .found(true)
+                                .name(o.getCustomerName())
+                                .flatNo(o.getFlatNo())
+                                .addressLine(o.getAddressLine())
+                                .landmark(o.getLandmark())
+                                .build())
+                        .orElseGet(() -> CustomerLookupResponse.builder().found(false).build()));
+    }
+
+    /** Keeps the profile table in sync with whatever address a customer
+     * most recently actually placed an order with — called once, right
+     * after an order is saved (see OrderService.placeOrder). The order
+     * itself is never touched again after this; only this profile row is
+     * written to on future address changes. */
+    @Transactional
+    public void upsertFromOrder(Order order) {
+        customerRepository.save(Customer.builder()
+                .phone(order.getPhone())
+                .name(order.getCustomerName())
+                .flatNo(order.getFlatNo())
+                .addressLine(order.getAddressLine())
+                .landmark(order.getLandmark())
+                .build());
+    }
+
+    /** Full order history for the customer-facing "My Orders" screen — same
+     * unauthenticated-by-phone pattern as lookupByPhone() above, so it
+     * comes with the same caveat: knowing a phone number is all it takes
+     * to see every order ever placed under it (items, amounts, delivery
+     * notes included). Deliberately excludes customerName/phone from each
+     * row (see CustomerOrderResponse) since the customer already knows
+     * who they are. */
+    @Transactional(readOnly = true)
+    public List<CustomerOrderResponse> ordersByPhone(String phone) {
+        String normalized = phone == null ? "" : phone.replaceAll("\\D", "");
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+        return orderRepository.findByPhoneOrderByCreatedAtDesc(normalized).stream()
+                .map(CustomerOrderResponse::from)
+                .collect(Collectors.toList());
+    }
+
+    /** Lets a customer fix their saved delivery address from the profile
+     * screen without placing a new order. Writes to the standalone
+     * Customer profile row only — deliberately never to any Order, so
+     * editing your address here can't rewrite where a past order says it
+     * was delivered. Returns the updated snapshot in the same shape
+     * lookupByPhone uses, so the profile screen can just re-render
+     * straight from the response. */
+    @Transactional
+    public CustomerLookupResponse updateAddress(CustomerAddressUpdateRequest request) {
+        String normalized = request.getPhone() == null ? "" : request.getPhone().replaceAll("\\D", "");
+        if (normalized.isBlank()) {
+            throw new BadRequestException("Phone number is required");
+        }
+        if (request.getName() == null || request.getName().isBlank()) {
+            throw new BadRequestException("Please enter your name");
+        }
+        if (request.getFlatNo() == null || request.getFlatNo().isBlank()) {
+            throw new BadRequestException("Please enter your flat / house no.");
+        }
+        if (request.getAddressLine() == null || request.getAddressLine().isBlank()) {
+            throw new BadRequestException("Please enter your address");
+        }
+
+        // Writes only to the profile table — never to any placed order.
+        // An order is a permanent record of what was actually delivered
+        // where (and under what name); changing your saved name/address
+        // afterwards must not rewrite that history.
+        Customer saved = customerRepository.save(Customer.builder()
+                .phone(normalized)
+                .name(request.getName().trim())
+                .flatNo(request.getFlatNo().trim())
+                .addressLine(request.getAddressLine().trim())
+                .landmark(blankToNull(request.getLandmark()))
+                .build());
+
+        return CustomerLookupResponse.builder()
+                .found(true)
+                .name(saved.getName())
+                .flatNo(saved.getFlatNo())
+                .addressLine(saved.getAddressLine())
+                .landmark(saved.getLandmark())
+                .build();
+    }
+
+    private String blankToNull(String value) {
+        return (value == null || value.isBlank()) ? null : value.trim();
     }
 
     private List<CustomerSummaryResponse> filter(List<CustomerSummaryResponse> customers, String query) {
