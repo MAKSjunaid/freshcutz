@@ -7,7 +7,15 @@
  * Right after phone is entered, this calls the public lookup endpoint —
  * if it's a returning customer, their flat/address/landmark from their
  * last order are filled in automatically instead of retyped, and their
- * name/phone never has to be entered again on the address step. */
+ * name/phone never has to be entered again on the address step.
+ *
+ * For a returning customer with a complete saved address, the delivery
+ * step opens as a read-only summary card (renderAddressSummary) instead
+ * of the full form — same idea as the admin order view, just the flat
+ * no. and address at a glance — with a "Change address" control that
+ * drops into the normal editable form (renderAddressForm) if they need
+ * to fix anything. First-time customers, or anyone with an incomplete
+ * saved address, go straight to the editable form. */
 
 window.CheckoutForm = (() => {
   function openContactStep(prefillName = "", prefillPhone = "") {
@@ -59,9 +67,80 @@ window.CheckoutForm = (() => {
     });
   }
 
+  /** A saved address only counts as "complete" (worth showing as a
+   * read-only summary) if it actually has the two required fields —
+   * otherwise fall straight through to the normal editable form. */
+  function hasSavedAddress(prefill) {
+    return !!(prefill && prefill.flatNo?.trim() && prefill.addressLine?.trim());
+  }
+
+  function checkoutFooterHtml() {
+    return `
+      <div class="sheet-footer">
+        <div class="summary-row"><span>Items</span><span>${Cart.getLineCount()}</span></div>
+        <div class="summary-row total"><span>Total (Cash on Delivery)</span><span>${Utils.formatMoney(Cart.getTotal())}</span></div>
+        <button class="btn btn-gold btn-block" style="margin-top:10px;" id="placeOrderBtn" form="checkoutForm">
+          Place Order
+        </button>
+      </div>`;
+  }
+
   function openDeliveryStep(customerName, phone, existing) {
-    const S = window.CheckoutSheet;
     const prefill = existing && existing.found ? existing : null;
+    if (hasSavedAddress(prefill)) {
+      renderAddressSummary(customerName, phone, prefill);
+    } else {
+      renderAddressForm(customerName, phone, prefill);
+    }
+  }
+
+  /** Returning customer, complete saved address: show it the way admin
+   * sees it on an order (🏠 flat/house, 📍 landmark) instead of empty
+   * text boxes they'd otherwise have to look at and re-confirm one by
+   * one. "Change address" swaps in the normal editable form. */
+  function renderAddressSummary(customerName, phone, prefill) {
+    const S = window.CheckoutSheet;
+    const body = `
+      <form class="sheet-body" id="checkoutForm" novalidate>
+        <button type="button" class="btn btn-ghost btn-sm" data-role="back" style="margin-bottom:4px;">← Back</button>
+        <div class="address-summary-card">
+          <div class="address-summary-row">🏠 ${Utils.escapeHtml(prefill.flatNo)}, ${Utils.escapeHtml(prefill.addressLine)}</div>
+          ${prefill.landmark ? `<div class="address-summary-row">📍 ${Utils.escapeHtml(prefill.landmark)}</div>` : ""}
+          <button type="button" class="btn btn-ghost btn-sm" data-role="edit-address" style="margin-top:var(--sp-2);">✏️ Change address</button>
+        </div>
+        <input type="hidden" name="flatNo" value="${Utils.escapeHtml(prefill.flatNo)}" />
+        <input type="hidden" name="addressLine" value="${Utils.escapeHtml(prefill.addressLine)}" />
+        <input type="hidden" name="landmark" value="${Utils.escapeHtml(prefill.landmark || "")}" />
+        <div class="field">
+          <label for="cf-notes">Special instructions (optional)</label>
+          <textarea id="cf-notes" name="notes" rows="2" placeholder="e.g. Call before delivering"></textarea>
+        </div>
+      </form>
+      ${checkoutFooterHtml()}`;
+
+    const sheet = S.renderSheet(body, `Welcome back, ${Utils.escapeHtml(customerName)}! Confirm your address`);
+    const form = sheet.querySelector("#checkoutForm");
+    const placeBtn = sheet.querySelector("#placeOrderBtn");
+
+    sheet.querySelector('[data-role="back"]').addEventListener("click", () => openContactStep(customerName, phone));
+    sheet.querySelector('[data-role="edit-address"]').addEventListener("click", () =>
+      renderAddressForm(customerName, phone, prefill)
+    );
+
+    placeBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      // Address fields are hidden inputs carrying already-known-good saved
+      // values here, so there's nothing to validate — only notes is free text.
+      await submitOrder(customerName, phone, form, placeBtn);
+    });
+  }
+
+  /** The normal editable address form — used for first-time customers,
+   * anyone whose saved address is incomplete, and returning customers who
+   * tapped "Change address" on the summary card. */
+  function renderAddressForm(customerName, phone, prefill) {
+    const S = window.CheckoutSheet;
+    const cameFromSummary = hasSavedAddress(prefill);
 
     const body = `
       <form class="sheet-body" id="checkoutForm" novalidate>
@@ -81,23 +160,27 @@ window.CheckoutForm = (() => {
           <input id="cf-landmark" name="landmark" placeholder="e.g. Near XYZ apartments" value="${Utils.escapeHtml(prefill?.landmark || "")}" />
         </div>
         <div class="field">
-          <label for="cf-notes">Order notes (optional)</label>
+          <label for="cf-notes">Special instructions (optional)</label>
           <textarea id="cf-notes" name="notes" rows="2" placeholder="e.g. Call before delivering"></textarea>
         </div>
       </form>
-      <div class="sheet-footer">
-        <div class="summary-row"><span>Items</span><span>${Cart.getLineCount()}</span></div>
-        <div class="summary-row total"><span>Total (Cash on Delivery)</span><span>${Utils.formatMoney(Cart.getTotal())}</span></div>
-        <button class="btn btn-gold btn-block" style="margin-top:10px;" id="placeOrderBtn" form="checkoutForm">
-          Place Order
-        </button>
-      </div>`;
+      ${checkoutFooterHtml()}`;
 
-    const sheet = S.renderSheet(body, prefill ? "Welcome back! Confirm your address" : "Delivery Details");
+    const title = cameFromSummary
+      ? "Edit your delivery address"
+      : "Delivery Details — just this once! We'll remember it for next time ✨";
+
+    const sheet = S.renderSheet(body, title);
     const form = sheet.querySelector("#checkoutForm");
     const placeBtn = sheet.querySelector("#placeOrderBtn");
 
-    sheet.querySelector('[data-role="back"]').addEventListener("click", () => openContactStep(customerName, phone));
+    sheet.querySelector('[data-role="back"]').addEventListener("click", () => {
+      if (cameFromSummary) {
+        renderAddressSummary(customerName, phone, prefill);
+      } else {
+        openContactStep(customerName, phone);
+      }
+    });
 
     placeBtn.addEventListener("click", async (e) => {
       e.preventDefault();
