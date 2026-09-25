@@ -24,15 +24,17 @@ public class OrderService {
     private final OrderCodeGenerator orderCodeGenerator;
     private final StoreSettingsService storeSettingsService;
     private final PushNotificationService pushNotificationService;
+    private final CustomerService customerService;
 
     public OrderService(OrderRepository orderRepository, ProductService productService,
                          OrderCodeGenerator orderCodeGenerator, StoreSettingsService storeSettingsService,
-                         PushNotificationService pushNotificationService) {
+                         PushNotificationService pushNotificationService, CustomerService customerService) {
         this.orderRepository = orderRepository;
         this.productService = productService;
         this.orderCodeGenerator = orderCodeGenerator;
         this.storeSettingsService = storeSettingsService;
         this.pushNotificationService = pushNotificationService;
+        this.customerService = customerService;
     }
 
     @Transactional
@@ -65,6 +67,10 @@ public class OrderService {
         order.setTotalAmount(total);
 
         Order saved = orderRepository.save(order);
+        // Keeps "My Account" / checkout's returning-customer prefill in sync
+        // with the address just used to order — a separate profile row, so
+        // nothing about this order itself is ever touched again after this.
+        customerService.upsertFromOrder(saved);
         pushNotificationService.notifyNewOrder(saved);
         return OrderResponse.from(saved);
     }
