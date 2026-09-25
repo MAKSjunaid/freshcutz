@@ -129,7 +129,15 @@
       return;
     }
     currentView = "checkout";
-    window.CheckoutForm.open();
+    // Already logged in via the profile icon (profile.js)? Skip straight
+    // to the final confirm-and-place-order screen instead of asking for
+    // a name/phone we already have on file.
+    const loggedInPhone = window.ProfileSheet && window.ProfileSheet.getSavedPhone();
+    if (loggedInPhone) {
+      window.CheckoutForm.openFinalStep(loggedInPhone);
+    } else {
+      window.CheckoutForm.open();
+    }
   }
 
   /** What was actually ordered, so the customer has a record even if they
@@ -178,7 +186,9 @@
     sheet.querySelector('[data-role="continue"]').addEventListener("click", closeSheet);
   }
 
-  document.getElementById("cartIconBtn").addEventListener("click", openCart);
+  // The header cart icon is gone (see profile.js) — the bottom cart-bar's
+  // "View Cart" button, which already appears the moment something's
+  // added, is the only entry point into the cart sheet now.
   document.getElementById("viewCartBtn").addEventListener("click", openCart);
 
   /** A price changed or a product got disabled from Admin while this
