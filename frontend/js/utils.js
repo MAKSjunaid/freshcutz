@@ -59,6 +59,15 @@ const Utils = (() => {
     return digits.length >= 10;
   }
 
+  /** Digits only, everything else (spaces, dashes, +91, brackets...)
+   * stripped out. Used everywhere a phone number is saved or looked up,
+   * so "9876543210" and "+91 98765-43210" are treated as the same
+   * customer instead of two different strings that happen to fail to
+   * match each other. */
+  function normalizePhone(value) {
+    return (value || "").replace(/\D/g, "");
+  }
+
   return {
     formatMoney,
     formatDateTime,
@@ -67,5 +76,6 @@ const Utils = (() => {
     discountPercent,
     resolveImageUrl,
     validatePhone,
+    normalizePhone,
   };
 })();
