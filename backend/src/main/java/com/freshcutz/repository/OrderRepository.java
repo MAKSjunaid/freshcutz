@@ -23,6 +23,13 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByOrderCode(String orderCode);
 
+    /** Used by the public "recognize returning customer" lookup at
+     * checkout — just their single most recent order, not their whole
+     * history (that's what CustomerService.listCustomers() is for, and
+     * it's admin-only). Deliberately a targeted query rather than loading
+     * every order for this phone number just to read one row. */
+    Optional<Order> findFirstByPhoneOrderByCreatedAtDesc(String phone);
+
     List<Order> findByCreatedAtGreaterThanEqualAndStatusNot(Instant from, OrderStatus excludedStatus);
 
     @EntityGraph(attributePaths = "items")
