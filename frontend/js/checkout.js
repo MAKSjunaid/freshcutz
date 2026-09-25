@@ -1,5 +1,9 @@
-/* Cart sheet -> checkout form -> order success. Everything renders into
- * #sheetRoot so index.html stays a static skeleton. */
+/* Cart sheet -> checkout (checkout-form.js) -> order success. Everything
+ * renders into #sheetRoot so index.html stays a static skeleton.
+ *
+ * Exposes window.CheckoutSheet — the shared sheet shell (renderSheet/
+ * closeSheet) and openSuccess — so checkout-form.js can render into the
+ * same sheet without both files fighting over their own copies of it. */
 
 (() => {
   const root = document.getElementById("sheetRoot");
@@ -125,103 +129,7 @@
       return;
     }
     currentView = "checkout";
-    const body = `
-      <form class="sheet-body" id="checkoutForm" novalidate>
-        <div class="field">
-          <label for="cf-name">Your name</label>
-          <input id="cf-name" name="customerName" required placeholder="e.g. Ayesha Khan" />
-          <div class="error" data-err="customerName"></div>
-        </div>
-        <div class="field">
-          <label for="cf-phone">Phone number</label>
-          <input id="cf-phone" name="phone" type="tel" required placeholder="10-digit mobile number" />
-          <div class="error" data-err="phone"></div>
-        </div>
-        <div class="field">
-          <label for="cf-flat">Flat / House no.</label>
-          <input id="cf-flat" name="flatNo" required placeholder="e.g. Flat 302, Block B" />
-          <div class="error" data-err="flatNo"></div>
-        </div>
-        <div class="field">
-          <label for="cf-address">Building name / Address</label>
-          <textarea id="cf-address" name="addressLine" rows="2" required placeholder="Building, street, area"></textarea>
-          <div class="error" data-err="addressLine"></div>
-        </div>
-        <div class="field">
-          <label for="cf-landmark">Landmark (optional)</label>
-          <input id="cf-landmark" name="landmark" placeholder="e.g. Near XYZ apartments" />
-        </div>
-        <div class="field">
-          <label for="cf-notes">Special instructions (optional)</label>
-          <textarea id="cf-notes" name="notes" rows="2" placeholder="e.g. Call before delivering"></textarea>
-        </div>
-      </form>
-      <div class="sheet-footer">
-        <div class="summary-row"><span>Items</span><span>${Cart.getLineCount()}</span></div>
-        <div class="summary-row total"><span>Total (Cash on Delivery)</span><span>${Utils.formatMoney(Cart.getTotal())}</span></div>
-        <button class="btn btn-gold btn-block" style="margin-top:10px;" id="placeOrderBtn" form="checkoutForm">
-          Place Order
-        </button>
-      </div>`;
-
-    const sheet = renderSheet(body, "Delivery Details");
-    const form = sheet.querySelector("#checkoutForm");
-    const placeBtn = sheet.querySelector("#placeOrderBtn");
-
-    placeBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      const errors = validate(form);
-      if (Object.keys(errors).length > 0) {
-        showErrors(sheet, errors);
-        return;
-      }
-      await submitOrder(form, placeBtn);
-    });
-  }
-
-  function validate(form) {
-    const errors = {};
-    const data = new FormData(form);
-    if (!data.get("customerName")?.trim()) errors.customerName = "Please enter your name";
-    if (!Utils.validatePhone(data.get("phone"))) errors.phone = "Enter a valid 10-digit phone number";
-    if (!data.get("flatNo")?.trim()) errors.flatNo = "Please enter your flat / house no.";
-    if (!data.get("addressLine")?.trim()) errors.addressLine = "Please enter your address";
-    return errors;
-  }
-
-  function showErrors(sheet, errors) {
-    sheet.querySelectorAll(".error").forEach((el) => (el.textContent = ""));
-    Object.entries(errors).forEach(([field, msg]) => {
-      const el = sheet.querySelector(`[data-err="${field}"]`);
-      if (el) el.textContent = msg;
-    });
-    const firstField = Object.keys(errors)[0];
-    sheet.querySelector(`[name="${firstField}"]`)?.focus();
-  }
-
-  async function submitOrder(form, btn) {
-    const data = new FormData(form);
-    const payload = {
-      customerName: data.get("customerName").trim(),
-      phone: data.get("phone").trim(),
-      flatNo: data.get("flatNo").trim(),
-      addressLine: data.get("addressLine").trim(),
-      landmark: data.get("landmark")?.trim() || null,
-      notes: data.get("notes")?.trim() || null,
-      items: Cart.toOrderItems(),
-    };
-
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner"></span> Placing order...`;
-    try {
-      const order = await Api.post("/api/orders", payload);
-      Cart.clear();
-      openSuccess(order);
-    } catch (err) {
-      Toast.show(err.message, "error");
-      btn.disabled = false;
-      btn.textContent = "Place Order";
-    }
+    window.CheckoutForm.open();
   }
 
   /** What was actually ordered, so the customer has a record even if they
@@ -284,4 +192,6 @@
       openCart();
     }
   });
+
+  window.CheckoutSheet = { renderSheet, closeSheet, openSuccess };
 })();
