@@ -152,7 +152,7 @@
           <input id="cf-landmark" name="landmark" placeholder="e.g. Near XYZ apartments" />
         </div>
         <div class="field">
-          <label for="cf-notes">Order notes (optional)</label>
+          <label for="cf-notes">Special instructions (optional)</label>
           <textarea id="cf-notes" name="notes" rows="2" placeholder="e.g. Call before delivering"></textarea>
         </div>
       </form>
