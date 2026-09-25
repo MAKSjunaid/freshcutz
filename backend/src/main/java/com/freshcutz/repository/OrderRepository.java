@@ -11,7 +11,7 @@ import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
-    /* @EntityGraph loads the lazy `items` collection in the same query
+    /* @EntityGraph loads the lazy `items` collection in the same Query
      * instead of leaving it as a lazy proxy. Without it, code that reads
      * an order's items after the fetching transaction has closed (as the
      * xlsx export does) hits "could not initialize proxy - no Session". */
