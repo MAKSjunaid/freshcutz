@@ -38,7 +38,7 @@
   border: none;
   background: transparent;
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 16px;
   color: var(--text-main);
   padding-right: 26px; /* room for the glossy clear circle */
 }
