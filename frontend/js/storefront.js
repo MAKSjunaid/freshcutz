@@ -17,6 +17,9 @@
   const emptyState = document.getElementById("emptyState");
   const categoryScroll = document.getElementById("categoryScroll");
   const whatsappLink = document.getElementById("whatsappLink");
+  const searchInput = document.getElementById("searchInput");
+  const searchClearX = document.getElementById("searchClearX");
+  let searchTerm = ""; // trimmed, lowercased comparisons happen in matchesSearch()
 
   /* Low threshold + a positive bottom rootMargin means a card starts
    * animating in while it's still just below the viewport, instead of
@@ -103,11 +106,24 @@
       .join("");
   }
 
+  function matchesSearch(p) {
+    if (!searchTerm) return true;
+    const q = searchTerm.toLowerCase();
+    return (
+      (p.name || "").toLowerCase().includes(q) ||
+      (p.description || "").toLowerCase().includes(q) ||
+      (p.category || "").toLowerCase().includes(q)
+    );
+  }
+
   function renderGrid() {
     const visible = allProducts.filter(
-      (p) => p.enabled && (activeCategory === "All" || p.category === activeCategory)
+      (p) => p.enabled && (activeCategory === "All" || p.category === activeCategory) && matchesSearch(p)
     );
     emptyState.hidden = visible.length > 0;
+    emptyState.querySelector("p").textContent = searchTerm
+      ? "We checked the whole farm. Nothing matched!"
+      : "No products available right now. Please check back soon.";
     grid.innerHTML = visible.map((p, i) => renderCard(p, i)).join("");
     grid.querySelectorAll(".product-card").forEach((el) => revealObserver.observe(el));
   }
@@ -222,6 +238,26 @@
     activeCategory = chip.dataset.cat;
     renderCategories();
     renderGrid();
+  });
+
+  const applySearchTerm = Utils.debounce(() => {
+    searchTerm = searchInput.value.trim();
+    renderGrid();
+  }, 200);
+
+  searchInput.addEventListener("input", () => {
+    searchClearX.hidden = !searchInput.value;
+    applySearchTerm();
+  });
+
+  searchClearX.addEventListener("click", () => {
+    searchInput.value = "";
+    searchClearX.hidden = true;
+    searchTerm = "";
+    renderGrid();
+    // Blur rather than refocus — clearing shouldn't leave the cursor
+    // blinking/keyboard up; typing again means tapping the box on purpose.
+    searchInput.blur();
   });
 
   grid.addEventListener("click", (e) => {
