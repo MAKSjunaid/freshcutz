@@ -15,6 +15,12 @@
   }
 
   function renderSheet(bodyHtml, title) {
+    // A toast from whatever the customer just did on the previous screen
+    // (e.g. "added to cart") shouldn't still be sitting on top of this new
+    // sheet a couple seconds later — every sheet (cart/checkout/success,
+    // plus profile.js's, since they all call this same renderSheet) opens
+    // clean instead of inheriting the last screen's toast.
+    Toast.dismissAll();
     root.innerHTML = `
       <div class="overlay" data-role="overlay"></div>
       <div class="sheet" role="dialog" aria-modal="true">
