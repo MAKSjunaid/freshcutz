@@ -22,10 +22,12 @@
   background: var(--bg-card);
   border: 1.5px solid #e6dcc0;
   border-radius: var(--r-pill);
-  /* Vertical padding trimmed from 10px to 6px — the 16px input text (fixed,
-     see its own comment re: mobile zoom) is most of the box's height, so
-     this brings the overall height down by about the 20% asked for. */
-  padding: 6px 14px;
+  /* Vertical padding pulled down to 4px so the box's overall height lands
+     the same as the category chips just above it (.cat-chip: 6px padding
+     around 12px text, ~29px tall) — the input text here has to stay at
+     16px (mobile zoom-on-tap, see its own comment), so less padding is
+     the only lever left to match that shorter chip height. */
+  padding: 4px 14px;
   box-shadow: var(--shadow-sm);
 }
 
