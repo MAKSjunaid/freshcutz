@@ -22,7 +22,10 @@
   background: var(--bg-card);
   border: 1.5px solid #e6dcc0;
   border-radius: var(--r-pill);
-  padding: 10px 14px;
+  /* Vertical padding trimmed from 10px to 6px — the 16px input text (fixed,
+     see its own comment re: mobile zoom) is most of the box's height, so
+     this brings the overall height down by about the 20% asked for. */
+  padding: 6px 14px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -38,6 +41,9 @@
   border: none;
   background: transparent;
   font-family: var(--font-body);
+  /* Mobile Safari/Chrome auto-zoom the page on focus for any text input
+     under 16px — 16px is the actual threshold, so that's what's set here
+     rather than 15px, which would still trigger the zoom. */
   font-size: 16px;
   color: var(--text-main);
   padding-right: 26px; /* room for the glossy clear circle */
