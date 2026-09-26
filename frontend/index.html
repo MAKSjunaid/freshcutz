@@ -53,6 +53,21 @@
     <div class="category-scroll" id="categoryScroll"></div>
   </nav>
 
+  <div class="search-bar-wrap container">
+    <div class="search-bar" id="searchBar">
+      <span class="search-bar-icon" aria-hidden="true">🔍</span>
+      <input
+        type="text"
+        id="searchInput"
+        class="search-bar-input"
+        placeholder="Search chicken, eggs…"
+        autocomplete="off"
+        aria-label="Search products"
+      />
+      <button type="button" class="search-clear-x" id="searchClearX" aria-label="Clear search" hidden>✕</button>
+    </div>
+  </div>
+
   <main class="catalog container">
     <div id="productGrid" class="product-grid" aria-live="polite"></div>
     <div id="emptyState" class="empty-state" hidden>
