@@ -10,4 +10,4 @@
 window.FRESHCUTZ_API_BASE = "https://freshcutz-backend-735v.onrender.com";
 
 /** WhatsApp number shown around the site, in international format. */
-window.FRESHCUTZ_WHATSAPP = "+91 89770 66412";
+window.FRESHCUTZ_WHATSAPP = "+91 97048 90039";
