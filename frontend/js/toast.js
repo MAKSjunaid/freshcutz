@@ -12,10 +12,19 @@ const Toast = (() => {
   }
 
   function show(message, type = "success", duration = 3200) {
+    const hostEl = host();
+    // A cart/checkout/profile sheet renders its markup into #sheetRoot, so
+    // a non-empty #sheetRoot means one's currently open — its footer button
+    // sits at the very bottom of the screen and varies in height sheet to
+    // sheet, so the toast floats near the top instead of risking a clash
+    // with it (see the .toast-above-sheet rule in components.css).
+    const sheetOpen = !!document.getElementById("sheetRoot")?.childElementCount;
+    hostEl.classList.toggle("toast-above-sheet", sheetOpen);
+
     const el = document.createElement("div");
     el.className = `toast ${type}`;
     el.textContent = message;
-    host().appendChild(el);
+    hostEl.appendChild(el);
     const timer = setTimeout(() => fadeOut(el), duration);
     el.dataset.timerId = timer; // so dismissAll() can cancel it instead of double-fading
   }
