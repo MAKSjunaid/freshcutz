@@ -12,6 +12,7 @@
   function closeSheet() {
     currentView = null;
     root.innerHTML = "";
+    document.documentElement.style.removeProperty("--toast-sheet-gap");
   }
 
   function renderSheet(bodyHtml, title) {
@@ -32,6 +33,15 @@
       </div>`;
     root.querySelector('[data-role="overlay"]').addEventListener("click", closeSheet);
     root.querySelector('[data-role="close"]').addEventListener("click", closeSheet);
+
+    // A toast shown while this sheet is up floats just above it (see
+    // Toast.show()'s .toast-above-sheet toggle + the CSS var) — measured
+    // now, with the sheet's real content (every cart item, etc.) already
+    // in the DOM, so the gap matches how tall this sheet actually rendered
+    // instead of a fixed guess.
+    const sheetEl = root.querySelector(".sheet");
+    document.documentElement.style.setProperty("--toast-sheet-gap", `${sheetEl.getBoundingClientRect().height + 14}px`);
+
     return root;
   }
 
@@ -209,5 +219,5 @@
     }
   });
 
-  window.CheckoutSheet = { renderSheet, closeSheet, openSuccess };
+  window.CheckoutSheet = { renderSheet, closeSheet, openCart, openSuccess };
 })();
