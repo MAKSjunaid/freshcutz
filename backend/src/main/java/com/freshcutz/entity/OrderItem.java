@@ -42,6 +42,12 @@ public class OrderItem {
     @Column(name = "variant_label", nullable = false, length = 40)
     private String variantLabel;
 
+    /** "variant1" or "variant2" — which priced size was picked. Nullable
+     * because orders placed before this field existed won't have it; the
+     * "Reorder" feature falls back to matching variantLabel text for those. */
+    @Column(name = "variant", length = 20)
+    private String variant;
+
     @Column(name = "unit_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal unitPrice;
 
