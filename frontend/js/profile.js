@@ -172,8 +172,66 @@ window.ProfileSheet = (() => {
       container.innerHTML = orders.length
         ? orders.map(orderCardHtml).join("")
         : `<div class="empty-state"><p>No orders yet.</p></div>`;
+      container.querySelectorAll('[data-action="reorder"]').forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const order = orders.find((o) => o.orderCode === btn.dataset.orderCode);
+          if (order) reorder(order);
+        });
+      });
     } catch (err) {
       container.innerHTML = `<div class="empty-state"><p>${Utils.escapeHtml(err.message)}</p></div>`;
+    }
+  }
+
+  /** "Reorder" on a past order — adds each line back to the cart at
+   *  today's price/stock (never the snapshotted order-time values), just
+   *  like tapping "Add to cart" on the product grid would. Anything no
+   *  longer sold, out of stock, or missing the size it was ordered in gets
+   *  skipped and rolled into one summary toast instead of failing silently
+   *  or one toast per item. */
+  function reorder(order) {
+    const unavailable = [];
+    let addedLines = 0; // distinct products successfully re-added, not their summed quantities
+
+    order.items.forEach((item) => {
+      const product = window.Storefront.getProduct(item.productId);
+      if (!product) {
+        unavailable.push(item.productName); // no longer in the (enabled) catalog at all
+        return;
+      }
+      let variant = item.variant;
+      if (variant !== "variant1" && variant !== "variant2") {
+        // Order placed before the variant key itself was recorded —
+        // fall back to matching the saved label text against this
+        // product's current ones.
+        variant = item.variantLabel === product.variant2Label ? "variant2" : "variant1";
+      }
+      const stillOffered = variant === "variant2" ? !!product.variant2Price : true;
+      if (!stillOffered || product.outOfStock) {
+        unavailable.push(item.productName);
+        return;
+      }
+      // Adds on top of whatever's already in the cart — other items stay
+      // untouched, and if this same product/size is already in there the
+      // two quantities combine instead of one overwriting the other.
+      Cart.setQuantity(product, variant, Cart.quantityOf(product.id, variant) + item.quantity);
+      addedLines += 1;
+    });
+
+    // Jump straight to "Your Cart" so they can see the result merged in
+    // with whatever was already there, instead of being left on My Orders.
+    if (addedLines > 0) {
+      window.CheckoutSheet.openCart();
+    }
+
+    if (addedLines > 0) {
+      Toast.show("Good choices deserve a repeat! 😍 Added to your cart.", "success");
+    }
+    if (unavailable.length > 0) {
+      Toast.show(
+        `${unavailable.join(", ")} ${unavailable.length === 1 ? "is" : "are"} currently unavailable and couldn't be added`,
+        "error"
+      );
     }
   }
 
@@ -203,6 +261,13 @@ window.ProfileSheet = (() => {
       </div>
       <div class="profile-order-items">${orderItemsHtml(order)}</div>
       <div class="profile-order-total"><span>Total</span><span>${Utils.formatMoney(order.totalAmount)}</span></div>
+      <button
+        type="button"
+        class="btn btn-gold btn-sm btn-block"
+        style="margin-top:8px;"
+        data-action="reorder"
+        data-order-code="${Utils.escapeHtml(order.orderCode)}"
+      >↺ Reorder</button>
     </div>`;
   }
 
