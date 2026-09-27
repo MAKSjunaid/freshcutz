@@ -84,9 +84,10 @@ public class OrderService {
             throw new BadRequestException(product.getName() + " is currently out of stock");
         }
 
+        String variantKey = "variant2".equals(itemRequest.getVariant()) ? "variant2" : "variant1";
         String label;
         BigDecimal price;
-        if ("variant2".equals(itemRequest.getVariant())) {
+        if ("variant2".equals(variantKey)) {
             if (product.getVariant2Price() == null) {
                 throw new BadRequestException(product.getName() + " has no " + itemRequest.getVariant() + " option");
             }
@@ -104,6 +105,7 @@ public class OrderService {
                 .productName(product.getName())
                 .productImageUrl(product.getImageUrl())
                 .variantLabel(label)
+                .variant(variantKey)
                 .unitPrice(price)
                 .quantity(itemRequest.getQuantity())
                 .lineTotal(lineTotal)
