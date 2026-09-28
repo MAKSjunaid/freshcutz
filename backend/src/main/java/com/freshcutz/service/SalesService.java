@@ -3,6 +3,7 @@ package com.freshcutz.service;
 import com.freshcutz.dto.DailySalesGroup;
 import com.freshcutz.dto.NewOrdersCountResponse;
 import com.freshcutz.dto.DailySalesRow;
+import com.freshcutz.dto.DailyTotalRow;
 import com.freshcutz.dto.SalesSummaryResponse;
 import com.freshcutz.dto.SumCountRow;
 import com.freshcutz.entity.Order;
@@ -11,15 +12,11 @@ import com.freshcutz.repository.OrderRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
 
 /** Rolling-window sales numbers for the admin home screen.
  *
@@ -83,50 +80,47 @@ public class SalesService {
                 .build();
     }
 
-    /** [from, to] window of delivered orders, broken out day by day with
-     * each day's orders listed under it — backs the Sales tab's date
-     * filter. There's no separate plain range-total query: the range-wide
-     * total and count the Sales tab shows above this breakdown are summed
-     * client-side from these per-day rows instead of asking the database
-     * for the same SUM+COUNT a second time. Each order in the list
-     * is a lightweight DailySalesRow (code, customer, date, total only);
-     * the full order (address, notes, items) is fetched separately, one
-     * at a time, only when an admin taps a row open — see
-     * AdminOrderController's GET /{id} and OrderService.getById. */
+    /** [from, to] window of delivered orders, totaled day by day — backs
+     * the Sales tab's Apply click. One grouped SQL query, one row per
+     * calendar day in the range (see OrderRepository.findDailyTotalsBetween)
+     * — NOT one row per order. The range-wide total/count the Sales tab
+     * shows above this breakdown are summed client-side from these per-day
+     * totals instead of asking the database for the same SUM+COUNT a
+     * second time. An individual day's actual orders are fetched
+     * separately, only once an admin expands that day — see
+     * getDayOrders() below and AdminOrderController's
+     * GET /summary/range/daily/{date}. */
     @Transactional(readOnly = true)
     public List<DailySalesGroup> getDailyRangeSummary(LocalDate from, LocalDate to) {
         Instant start = from.atStartOfDay(SHOP_ZONE).toInstant();
         Instant end = to.plusDays(1).atStartOfDay(SHOP_ZONE).toInstant();
 
-        // One query, already filtered to the range and sorted newest
-        // first by the database — not a load of every delivered order
-        // ever placed followed by filtering/sorting in Java.
-        List<DailySalesRow> rows = orderRepository.findDeliveredSummaryBetween(OrderStatus.DELIVERED, start, end);
-
-        // Newest day first — same ordering as every other order listing
-        // in this app.
-        Map<LocalDate, List<DailySalesRow>> byDate = new TreeMap<>(Comparator.reverseOrder());
-        for (DailySalesRow row : rows) {
-            LocalDate day = row.getDeliveredAt().atZone(SHOP_ZONE).toLocalDate();
-            byDate.computeIfAbsent(day, d -> new ArrayList<>()).add(row);
-        }
+        List<DailyTotalRow> totals = orderRepository.findDailyTotalsBetween(
+                OrderStatus.DELIVERED.name(), start, end, SHOP_ZONE.getId());
 
         List<DailySalesGroup> groups = new ArrayList<>();
-        for (Map.Entry<LocalDate, List<DailySalesRow>> entry : byDate.entrySet()) {
-            List<DailySalesRow> dayRows = entry.getValue();
-            BigDecimal dayTotal = BigDecimal.ZERO;
-            for (DailySalesRow row : dayRows) {
-                dayTotal = dayTotal.add(row.getTotalAmount());
-            }
+        for (DailyTotalRow row : totals) {
             groups.add(DailySalesGroup.builder()
-                    .date(entry.getKey().toString())
-                    .total(dayTotal)
-                    .orders(dayRows.size())
-                    .rows(dayRows)
+                    .date(row.getDay())
+                    .total(row.getTotal())
+                    .orders(row.getOrders())
                     .build());
         }
-
         return groups;
+    }
+
+    /** One day's worth of delivered orders, as lightweight rows (code,
+     * customer, date, total — no address, no items) — fetched only when
+     * an admin actually expands that day in the Sales tab's breakdown
+     * (see AdminOrderController's GET /summary/range/daily/{date}). An
+     * order's full detail (address, notes, items) is a further, separate
+     * fetch of its own, only when that specific order is tapped open —
+     * see OrderService.getById. */
+    @Transactional(readOnly = true)
+    public List<DailySalesRow> getDayOrders(LocalDate day) {
+        Instant start = day.atStartOfDay(SHOP_ZONE).toInstant();
+        Instant end = day.plusDays(1).atStartOfDay(SHOP_ZONE).toInstant();
+        return orderRepository.findDeliveredSummaryBetween(OrderStatus.DELIVERED, start, end);
     }
 
     /** Orders created within [from, to) — used by the export feature's
