@@ -61,8 +61,22 @@ const AdminAuth = (() => {
   function init() {
     loginForm.addEventListener("submit", handleLogin);
     document.getElementById("logoutBtn").addEventListener("click", () => logout(false));
-    window.addEventListener("freshcutz:unauthorized", () => {
-      Toast.show("Your session expired — please sign in again", "error");
+    // Api.js dispatches this for ANY failed /api/admin request - a real
+    // 401 (token expired/invalid - the backend's token store is
+    // in-memory, see TokenStore.java, so a backend restart forgets
+    // every session instantly) or the backend being flat-out
+    // unreachable. Either way the admin app is not usable right now,
+    // so both drop straight back to the login screen - same as
+    // clearing the browser's stored data would - rather than leaving
+    // a half-working screen full of raw error toasts.
+    window.addEventListener("freshcutz:unauthorized", (e) => {
+      const reason = e.detail && e.detail.reason;
+      Toast.show(
+        reason === "offline"
+          ? "Could not reach the server — please sign in again"
+          : "Your session expired — please sign in again",
+        "error"
+      );
       logout(true);
     });
 
