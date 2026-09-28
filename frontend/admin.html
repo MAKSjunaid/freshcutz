@@ -48,34 +48,36 @@
 
   <!-- Admin app -->
   <div id="adminApp" hidden>
-    <header class="admin-topbar">
-      <div class="brand-text">
-        <div class="name">FRESHCUTZ ADMIN</div>
-      </div>
-      <div class="topbar-actions">
-        <div class="store-toggle">
-          <span class="store-toggle-label" id="storeToggleLabel">Online</span>
-          <label class="switch">
-            <input type="checkbox" id="storeOnlineToggle" checked />
-            <span class="track"></span>
-          </label>
+    <div class="admin-header-group">
+      <header class="admin-topbar">
+        <div class="brand-text">
+          <div class="name">FRESHCUTZ ADMIN</div>
         </div>
-        <button class="btn btn-ghost btn-sm push-toggle-btn" id="pushToggleBtn" hidden title="Enable order alerts on this device">🔔</button>
-        <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
+        <div class="topbar-actions">
+          <div class="store-toggle">
+            <span class="store-toggle-label" id="storeToggleLabel">Online</span>
+            <label class="switch">
+              <input type="checkbox" id="storeOnlineToggle" checked />
+              <span class="track"></span>
+            </label>
+          </div>
+          <button class="btn btn-ghost btn-sm push-toggle-btn" id="pushToggleBtn" hidden title="Enable order alerts on this device">🔔</button>
+          <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
+        </div>
+      </header>
+
+      <div class="push-ios-banner" id="pushIosBanner" hidden>
+        <span>📲 To get order alerts on this iPhone: tap Share, then "Add to Home Screen" — then open FreshCutz Admin from your Home Screen and tap "Enable alerts".</span>
+        <button id="pushIosBannerClose" aria-label="Dismiss">✕</button>
       </div>
-    </header>
 
-    <div class="push-ios-banner" id="pushIosBanner" hidden>
-      <span>📲 To get order alerts on this iPhone: tap Share, then "Add to Home Screen" — then open FreshCutz Admin from your Home Screen and tap "Enable alerts".</span>
-      <button id="pushIosBannerClose" aria-label="Dismiss">✕</button>
+      <nav class="admin-tabs">
+        <button class="admin-tab active" data-view="orders">📦 Orders <span class="count-pill" id="newOrdersPill" hidden>0</span></button>
+        <button class="admin-tab" data-view="products">🍗 Products</button>
+        <button class="admin-tab" data-view="stats">📊 Sales</button>
+        <button class="admin-tab" data-view="customers">👥 Customers</button>
+      </nav>
     </div>
-
-    <nav class="admin-tabs">
-      <button class="admin-tab active" data-view="orders">📦 Orders <span class="count-pill" id="newOrdersPill" hidden>0</span></button>
-      <button class="admin-tab" data-view="products">🍗 Products</button>
-      <button class="admin-tab" data-view="stats">📊 Sales</button>
-      <button class="admin-tab" data-view="customers">👥 Customers</button>
-    </nav>
 
     <section class="admin-view active" id="view-orders">
       <div class="search-row">
@@ -98,13 +100,19 @@
     <section class="admin-view" id="view-stats">
       <div class="sales-toolbar">
         <div class="date-range-row">
-          <input type="date" id="statsFrom" aria-label="From date" />
-          <span>to</span>
-          <input type="date" id="statsTo" aria-label="To date" />
+          <label class="date-field">
+            <span class="date-field-label">From</span>
+            <input type="date" id="statsFrom" aria-label="From date" />
+          </label>
+          <label class="date-field">
+            <span class="date-field-label">To</span>
+            <input type="date" id="statsTo" aria-label="To date" />
+          </label>
           <button class="btn btn-outline btn-sm" id="applyRangeBtn">Apply</button>
+          <button class="btn btn-ghost btn-sm" id="clearRangeBtn" hidden>Clear</button>
         </div>
         <div class="sales-actions-row">
-          <button class="btn btn-outline btn-sm" id="exportFilteredBtn">⬇ Export filtered</button>
+          <button class="btn btn-outline btn-sm" id="exportFilteredBtn" hidden>⬇ Export filtered</button>
           <button class="btn btn-outline btn-sm" id="exportAllBtn">⬇ Export all</button>
           <label class="btn btn-ghost btn-sm file-btn">
             ⬆ Import
