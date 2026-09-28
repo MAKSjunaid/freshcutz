@@ -81,7 +81,10 @@ window.AdminOrders = (() => {
       list.innerHTML = orders.length
         ? orders.map(card).join("")
         : `<div class="empty-state"><div class="icon">📭</div><p>${searchTerm ? "No orders match your search." : "No orders here yet."}</p></div>`;
-      window.AdminStats?.refresh();
+      // The order list just changed — the Orders-tab badge count may
+      // have too, but nothing here needs the full Sales summary (today/
+      // week/month/all-time), so keep this to the one cheap badge query.
+      window.AdminStats?.refreshBadge();
     } catch (err) {
       if (firstLoadForThisFilter) {
         list.innerHTML = `<div class="empty-state"><p>${Utils.escapeHtml(err.message)}</p></div>`;
