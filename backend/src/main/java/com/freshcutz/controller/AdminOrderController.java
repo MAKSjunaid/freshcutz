@@ -1,6 +1,7 @@
 package com.freshcutz.controller;
 
 import com.freshcutz.dto.DailySalesGroup;
+import com.freshcutz.dto.DailySalesRow;
 import com.freshcutz.dto.NewOrdersCountResponse;
 import com.freshcutz.dto.OrderResponse;
 import com.freshcutz.dto.SalesSummaryResponse;
@@ -46,15 +47,23 @@ public class AdminOrderController {
         return salesService.getNewOrdersCount();
     }
 
-    /** Range-wide total + count, broken out day by day with the actual
-     * orders listed under each date — backs the Sales tab's date filter.
-     * (There's no separate plain-total endpoint: the range-wide total and
-     * count shown above this breakdown are summed client-side from these
-     * per-day rows instead of asking the database for the same SUM+COUNT
-     * a second time.) */
+    /** One row per calendar day in [from, to] — just the day's total and
+     * order count, NOT its individual orders — backs the Sales tab's
+     * Apply click. (There's no separate plain range-total endpoint: the
+     * range-wide total and count shown above this breakdown are summed
+     * client-side from these per-day totals instead of asking the
+     * database for the same SUM+COUNT a second time.) */
     @GetMapping("/summary/range/daily")
     public List<DailySalesGroup> dailyRangeSummary(@RequestParam String from, @RequestParam String to) {
         return salesService.getDailyRangeSummary(LocalDate.parse(from), LocalDate.parse(to));
+    }
+
+    /** A single day's individual delivered orders, as lightweight rows —
+     * fetched only when an admin expands that day in the Sales tab's
+     * breakdown, not shipped up front for every day in the range. */
+    @GetMapping("/summary/range/daily/{date}")
+    public List<DailySalesRow> dayOrders(@PathVariable String date) {
+        return salesService.getDayOrders(LocalDate.parse(date));
     }
 
     /** Full detail (address, notes, items) for exactly one order — the
