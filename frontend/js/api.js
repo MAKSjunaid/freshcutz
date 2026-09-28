@@ -26,19 +26,32 @@ const Api = (() => {
       payload = JSON.stringify(body);
     }
 
+    const isAdminPath = path.startsWith("/api/admin");
+    const isLoginPath = path.endsWith("/auth/login");
+
     let response;
     try {
       response = await fetch(`${base()}${path}`, { method, headers, body: payload });
     } catch (networkErr) {
+      // Can not tell a dead backend apart from a dropped connection from
+      // here — but either way, an admin screen that can not reach the
+      // server is not usable, so treat it the same as an expired session
+      // rather than leaving the caller to show a raw error: drop the
+      // token and send the admin straight back to the sign-in screen,
+      // same as it would if they cleared their browser data themselves.
+      if (isAdminPath && !isLoginPath) {
+        localStorage.removeItem("freshcutz_admin_token");
+        window.dispatchEvent(new CustomEvent("freshcutz:unauthorized", { detail: { reason: "offline" } }));
+      }
       throw new Error(
         "Could not reach the FreshCutz server. Check your internet connection or that the backend is running."
       );
     }
 
-    if (response.status === 401 && path.startsWith("/api/admin")) {
+    if (response.status === 401 && isAdminPath) {
       localStorage.removeItem("freshcutz_admin_token");
-      if (!path.endsWith("/auth/login")) {
-        window.dispatchEvent(new CustomEvent("freshcutz:unauthorized"));
+      if (!isLoginPath) {
+        window.dispatchEvent(new CustomEvent("freshcutz:unauthorized", { detail: { reason: "expired" } }));
       }
     }
 
