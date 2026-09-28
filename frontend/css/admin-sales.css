@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Sales tab: date-range filter, export/import toolbar, and the Import
+   Sales tab: date-range filter, export/import toolbar, and the import
    result panel. Split out of admin-cards.css to keep that file smaller.
    ========================================================================== */
 
@@ -12,13 +12,46 @@
 
 .date-range-row {
   display: flex;
-  align-items: center;
+  /* flex-end, not center — each date field is now a two-line label+input
+     stack, and this keeps the inputs lined up with the Apply/Clear
+     buttons instead of the whole stack sitting centered against them. */
+  align-items: flex-end;
   gap: 8px;
   flex-wrap: wrap;
 }
 
+/* Wraps each date input with its own always-visible "From"/"To" caption
+   above it — a plain placeholder attribute wouldn't do here on its own,
+   since type="date" inputs ignore it on iOS Safari and most Android
+   browsers. (A custom "Select date" hint drawn inside the box itself was
+   tried too, but on devices whose browser already renders its own native
+   "dd-mm-yyyy" hint for an empty date field, that meant showing two
+   overlapping hints at once — so the box's own native rendering is left
+   alone, and this caption is the only thing added.)
+   flex-basis AND min-width are both set (not the usual min-width: 0) so
+   this field can never be squeezed narrower than a full selected date
+   needs — with min-width: 0 the flex algorithm will shrink an item to
+   fit its line instead of wrapping, which is what was clipping a picked
+   date's text; now the row wraps Apply/Clear to their own line instead
+   of compressing the date boxes. */
+.date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 140px;
+  min-width: 140px;
+}
+
+.date-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
 .date-range-row input[type="date"] {
-  flex: 1 1 130px;
+  width: 100%;
   min-width: 0;
   padding: 9px 10px;
   border-radius: var(--r-sm);
@@ -26,11 +59,6 @@
   background: #fff;
   /* 16px minimum — under that, iOS Safari zooms the page in on tap. */
   font-size: 16px;
-}
-
-.date-range-row span {
-  font-size: 12.5px;
-  color: var(--text-muted);
 }
 
 .sales-actions-row {
@@ -49,6 +77,125 @@
 .range-result,
 .import-result {
   margin-bottom: var(--sp-4);
+}
+
+/* ---- Date-wise breakdown, under the range total's stat card ------------ */
+.daily-sales {
+  margin-top: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.daily-sales-group {
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.daily-sales-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #eee3cc;
+}
+
+.daily-sales-date {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.daily-sales-day-total {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.daily-sales-row {
+  padding: 7px 0;
+}
+
+.daily-sales-row + .daily-sales-row {
+  border-top: 1px dashed #eee3cc;
+}
+
+.daily-sales-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.daily-sales-row-sub {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Tap target for expanding a row — a plain <button> reset back to look
+   like the text it wraps, not a button. */
+.daily-sales-row-summary {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.daily-sales-row-chevron {
+  display: inline-block;
+  width: 12px;
+  margin-right: 4px;
+  color: var(--text-muted);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.daily-sales-row.is-open .daily-sales-row-chevron {
+  transform: rotate(90deg);
+}
+
+.daily-sales-row-details {
+  margin-top: 8px;
+  animation: fadeUp var(--dur-fast) var(--ease-out) both;
+}
+
+.daily-sales-row-details .order-items-list {
+  margin-top: 8px;
+}
+
+/* Shown in a row's detail panel while its full order detail is being
+   fetched on first tap (see admin-stats.js). */
+.daily-sales-row-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* .spinner (animations.css) defaults to a near-invisible ring meant for a
+   solid/dark button background — this row's own background is light, so
+   give it a gold ring instead. */
+.spinner-dark {
+  border-color: rgba(201, 161, 59, 0.25);
+  border-top-color: var(--gold);
 }
 
 .import-errors {
