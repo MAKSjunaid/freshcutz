@@ -54,17 +54,34 @@ body.admin {
   text-align: left;
 }
 
-/* ---- Top bar -------------------------------------------------------- */
-/* Fixed height (rather than padding driving it) so .admin-tabs below can
-   stick at exactly `--header-h` with no gap/overlap — a mismatch there is
-   what made the tab row visibly creep and jitter while scrolling,
-   especially on mobile. translateZ(0) forces both bars onto their own
-   compositor layer, which is what stops mobile Safari/Chrome from
-   re-flowing (and visibly shaking) stacked sticky elements on scroll. */
-.admin-topbar {
+/* ---- Top bar + tabs, as one sticky unit ------------------------------ */
+/* .admin-topbar and .admin-tabs used to each be their own independent
+   position: sticky element, the second one's `top` hard-coded to sit
+   right below the first (`top: var(--header-h)`). Two separately-sticky
+   elements stacked like that is a well-known source of persistent visible
+   jitter on mobile Safari/Chrome — each one gets recalculated against the
+   scroll position on its own, and any tiny mismatch between the second
+   one's assumed offset and the first one's *actual* current height (which
+   changes the moment something in between — like the iOS "Add to Home
+   Screen" banner below — shows, hides, or wraps to a second line) shows
+   up as a small up/down jump on every scroll frame. Wrapping both (and
+   the banner between them) in a single sticky .admin-header-group fixes
+   this at the root: there's only ever one sticky element now, and the
+   topbar/banner/tabs just stack normally inside it, so there's no offset
+   to keep in sync and nothing left to jitter against. translateZ(0)
+   forces it onto its own compositor layer, and padding-top: var(--safe-top)
+   (0 on ordinary browsers, the status-bar/Dynamic-Island inset on an
+   iPhone PWA) keeps the whole group clear of the notch/status bar. */
+.admin-header-group {
   position: sticky;
   top: 0;
   z-index: 500;
+  padding-top: var(--safe-top);
+  background: var(--ink);
+  transform: translateZ(0);
+}
+
+.admin-topbar {
   background: var(--ink);
   color: var(--text-on-dark);
   height: var(--header-h);
@@ -72,7 +89,6 @@ body.admin {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  transform: translateZ(0);
 }
 
 .admin-topbar .brand-text .name { color: var(--gold-light); font-size: 16px; }
@@ -146,16 +162,12 @@ body.admin {
 }
 
 .admin-tabs {
-  position: sticky;
-  top: var(--header-h);
-  z-index: 400;
   display: flex;
   gap: 6px;
   background: #f4f1e8;
   padding: 10px var(--sp-4);
   overflow-x: auto;
   border-bottom: 1px solid #e6dcc0;
-  transform: translateZ(0);
 }
 
 .admin-tab {
