@@ -1,7 +1,10 @@
 package com.freshcutz.service;
 
-import com.freshcutz.dto.RangeSummaryResponse;
+import com.freshcutz.dto.DailySalesGroup;
+import com.freshcutz.dto.NewOrdersCountResponse;
+import com.freshcutz.dto.DailySalesRow;
 import com.freshcutz.dto.SalesSummaryResponse;
+import com.freshcutz.dto.SumCountRow;
 import com.freshcutz.entity.Order;
 import com.freshcutz.entity.OrderStatus;
 import com.freshcutz.repository.OrderRepository;
@@ -12,9 +15,20 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
-/** Rolling-window sales numbers for the admin home screen. */
+/** Rolling-window sales numbers for the admin home screen.
+ *
+ * Every method here is scoped to the database: SUM/COUNT aggregation and
+ * date-range filtering all happen in SQL (see OrderRepository's
+ * sumAndCountDelivered... and findDeliveredSummaryBetween queries), never by
+ * loading full order history into the JVM and looping over it. That's
+ * what keeps this fast at any order volume — a store with 50,000 delivered
+ * orders costs the same handful of small queries as one with 50. */
 @Service
 public class SalesService {
 
@@ -35,83 +49,88 @@ public class SalesService {
         // Only DELIVERED orders count as sales, and they count on the day
         // they were DELIVERED (not the day they were placed) — a brand-new
         // order shouldn't show up in "Today" until it's actually fulfilled.
-        List<Order> deliveredOrders = orderRepository.findByStatusOrderByCreatedAtDesc(OrderStatus.DELIVERED);
-
-        BigDecimal todayTotal = BigDecimal.ZERO;
-        BigDecimal weekTotal = BigDecimal.ZERO;
-        BigDecimal monthTotal = BigDecimal.ZERO;
-        BigDecimal allTimeTotal = BigDecimal.ZERO;
-        long todayCount = 0;
-        long weekCount = 0;
-        long monthCount = 0;
-        long allTimeCount = 0;
-
-        for (Order order : deliveredOrders) {
-            Instant deliveredAt = order.getDeliveredAt();
-            if (deliveredAt == null) continue;
-
-            allTimeTotal = allTimeTotal.add(order.getTotalAmount());
-            allTimeCount++;
-
-            if (deliveredAt.isBefore(last30Days)) continue;
-            monthTotal = monthTotal.add(order.getTotalAmount());
-            monthCount++;
-            if (!deliveredAt.isBefore(last7Days)) {
-                weekTotal = weekTotal.add(order.getTotalAmount());
-                weekCount++;
-            }
-            if (!deliveredAt.isBefore(startOfToday)) {
-                todayTotal = todayTotal.add(order.getTotalAmount());
-                todayCount++;
-            }
-        }
-
-        long newOrders = orderRepository.findByStatusOrderByCreatedAtDesc(OrderStatus.NEW).size();
+        // Each bucket below is a bare "since this instant" cutoff rather
+        // than a cumulative filter, because a delivery within the last 7
+        // days is automatically within the last 30 too — so the buckets
+        // don't need to be computed from each other or from one big list.
+        SumCountRow today = orderRepository.sumAndCountDeliveredSince(OrderStatus.DELIVERED, startOfToday);
+        SumCountRow week = orderRepository.sumAndCountDeliveredSince(OrderStatus.DELIVERED, last7Days);
+        SumCountRow month = orderRepository.sumAndCountDeliveredSince(OrderStatus.DELIVERED, last30Days);
+        SumCountRow allTime = orderRepository.sumAndCountDeliveredSince(OrderStatus.DELIVERED, Instant.EPOCH);
+        long newOrders = orderRepository.countByStatus(OrderStatus.NEW);
 
         return SalesSummaryResponse.builder()
-                .todayTotal(todayTotal)
-                .todayOrders(todayCount)
-                .weekTotal(weekTotal)
-                .weekOrders(weekCount)
-                .monthTotal(monthTotal)
-                .monthOrders(monthCount)
-                .allTimeTotal(allTimeTotal)
-                .allTimeOrders(allTimeCount)
+                .todayTotal(today.getTotal())
+                .todayOrders(today.getCount())
+                .weekTotal(week.getTotal())
+                .weekOrders(week.getCount())
+                .monthTotal(month.getTotal())
+                .monthOrders(month.getCount())
+                .allTimeTotal(allTime.getTotal())
+                .allTimeOrders(allTime.getCount())
                 .newOrders(newOrders)
                 .build();
     }
 
-    /** Total + order count for an admin-picked "from" to "to" date range
-     * (inclusive of both days, shop-local time), for the Sales tab's date
-     * filter. Only DELIVERED orders count, keyed by their delivery date —
-     * same rule as getSummary() above. */
+    /** Just the "new orders" count — a single cheap COUNT(*), meant to be
+     * polled everywhere in the admin panel (not just the Sales tab) to
+     * keep the Orders-tab badge live without paying for the full
+     * multi-bucket summary above on every tick. */
     @Transactional(readOnly = true)
-    public RangeSummaryResponse getRangeSummary(LocalDate from, LocalDate to) {
-        Instant start = from.atStartOfDay(SHOP_ZONE).toInstant();
-        Instant end = to.plusDays(1).atStartOfDay(SHOP_ZONE).toInstant();
-
-        List<Order> deliveredOrders = orderRepository.findByStatusOrderByCreatedAtDesc(OrderStatus.DELIVERED);
-        BigDecimal total = BigDecimal.ZERO;
-        long count = 0;
-        for (Order order : deliveredOrders) {
-            Instant deliveredAt = order.getDeliveredAt();
-            if (deliveredAt == null) continue;
-            if (!deliveredAt.isBefore(start) && deliveredAt.isBefore(end)) {
-                total = total.add(order.getTotalAmount());
-                count++;
-            }
-        }
-
-        return RangeSummaryResponse.builder()
-                .from(from.toString())
-                .to(to.toString())
-                .total(total)
-                .orders(count)
+    public NewOrdersCountResponse getNewOrdersCount() {
+        return NewOrdersCountResponse.builder()
+                .newOrders(orderRepository.countByStatus(OrderStatus.NEW))
                 .build();
     }
 
-    /** Orders created within [from, to) — used by both the range summary
-     * above and the export feature's date-filtered download. */
+    /** [from, to] window of delivered orders, broken out day by day with
+     * each day's orders listed under it — backs the Sales tab's date
+     * filter. There's no separate plain range-total query: the range-wide
+     * total and count the Sales tab shows above this breakdown are summed
+     * client-side from these per-day rows instead of asking the database
+     * for the same SUM+COUNT a second time. Each order in the list
+     * is a lightweight DailySalesRow (code, customer, date, total only);
+     * the full order (address, notes, items) is fetched separately, one
+     * at a time, only when an admin taps a row open — see
+     * AdminOrderController's GET /{id} and OrderService.getById. */
+    @Transactional(readOnly = true)
+    public List<DailySalesGroup> getDailyRangeSummary(LocalDate from, LocalDate to) {
+        Instant start = from.atStartOfDay(SHOP_ZONE).toInstant();
+        Instant end = to.plusDays(1).atStartOfDay(SHOP_ZONE).toInstant();
+
+        // One query, already filtered to the range and sorted newest
+        // first by the database — not a load of every delivered order
+        // ever placed followed by filtering/sorting in Java.
+        List<DailySalesRow> rows = orderRepository.findDeliveredSummaryBetween(OrderStatus.DELIVERED, start, end);
+
+        // Newest day first — same ordering as every other order listing
+        // in this app.
+        Map<LocalDate, List<DailySalesRow>> byDate = new TreeMap<>(Comparator.reverseOrder());
+        for (DailySalesRow row : rows) {
+            LocalDate day = row.getDeliveredAt().atZone(SHOP_ZONE).toLocalDate();
+            byDate.computeIfAbsent(day, d -> new ArrayList<>()).add(row);
+        }
+
+        List<DailySalesGroup> groups = new ArrayList<>();
+        for (Map.Entry<LocalDate, List<DailySalesRow>> entry : byDate.entrySet()) {
+            List<DailySalesRow> dayRows = entry.getValue();
+            BigDecimal dayTotal = BigDecimal.ZERO;
+            for (DailySalesRow row : dayRows) {
+                dayTotal = dayTotal.add(row.getTotalAmount());
+            }
+            groups.add(DailySalesGroup.builder()
+                    .date(entry.getKey().toString())
+                    .total(dayTotal)
+                    .orders(dayRows.size())
+                    .rows(dayRows)
+                    .build());
+        }
+
+        return groups;
+    }
+
+    /** Orders created within [from, to) — used by the export feature's
+     * date-filtered download. */
     @Transactional(readOnly = true)
     public List<Order> ordersInRange(Instant from, Instant to) {
         return orderRepository.findByCreatedAtBetweenOrderByCreatedAtDesc(from, to);
