@@ -18,7 +18,9 @@ import java.util.List;
  * the customer's cart or the product catalog changes later.
  */
 @Entity
-@Table(name = "orders")
+@Table(name = "orders", indexes = {
+        @Index(name = "idx_orders_status_delivered_at", columnList = "status, delivered_at")
+})
 @Getter
 @Setter
 @NoArgsConstructor
