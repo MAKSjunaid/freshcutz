@@ -191,7 +191,7 @@ window.ProfileSheet = (() => {
    *  or one toast per item. */
   function reorder(order) {
     const unavailable = [];
-    let addedLines = 0; // distinct products successfully re-added, not their summed quantities
+    const toAdd = []; // { product, variant, quantity } — figured out before touching the cart at all
 
     order.items.forEach((item) => {
       const product = window.Storefront.getProduct(item.productId);
@@ -211,20 +211,20 @@ window.ProfileSheet = (() => {
         unavailable.push(item.productName);
         return;
       }
-      // Adds on top of whatever's already in the cart — other items stay
-      // untouched, and if this same product/size is already in there the
-      // two quantities combine instead of one overwriting the other.
-      Cart.setQuantity(product, variant, Cart.quantityOf(product.id, variant) + item.quantity);
-      addedLines += 1;
+      toAdd.push({ product, variant, quantity: item.quantity });
     });
 
-    // Jump straight to "Your Cart" so they can see the result merged in
-    // with whatever was already there, instead of being left on My Orders.
-    if (addedLines > 0) {
+    if (toAdd.length > 0) {
+      // Reorder replaces the cart with just this order — whatever was
+      // already sitting in there gets cleared first, rather than piling
+      // this order on top of it. Only clears once we know there's at
+      // least one item to actually reorder, so an order that's entirely
+      // unavailable never wipes out an existing cart for nothing.
+      Cart.clear();
+      toAdd.forEach(({ product, variant, quantity }) => {
+        Cart.setQuantity(product, variant, quantity);
+      });
       window.CheckoutSheet.openCart();
-    }
-
-    if (addedLines > 0) {
       Toast.show("Good choices deserve a repeat! 😍 Added to your cart.", "success");
     }
     if (unavailable.length > 0) {
