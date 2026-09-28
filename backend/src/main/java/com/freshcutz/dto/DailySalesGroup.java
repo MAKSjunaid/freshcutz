@@ -5,16 +5,16 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.math.BigDecimal;
-import java.util.List;
 
-/** One day's worth of delivered orders within an admin-picked date range —
- * see SalesService.getDailyRangeSummary(). Grouped and sorted by delivery
- * date (not order-placed date), same rule the rest of the Sales tab uses,
- * newest day first. `rows` is deliberately lightweight (code, customer,
- * date, total — no address, no items) so an Apply click only ever ships
- * one small SQL-projected row per order; the Sales tab fetches an order's
- * full detail (address, notes, items) separately, one at a time, only when
- * an admin taps that row open. */
+/** One day's total within an admin-picked date range — see
+ * SalesService.getDailyRangeSummary(). Just the day, its total, and its
+ * order count: deliberately NOT the individual orders themselves. An
+ * Apply click used to ship every order in the whole range up front (as
+ * lightweight rows, but still one per order — thousands of them for a
+ * wide range); now it only ever ships one row per DAY. The Sales tab
+ * fetches a given day's individual orders separately, only once an admin
+ * actually expands that day — see AdminOrderController's
+ * GET /summary/range/daily/{date} and SalesService.getDayOrders(). */
 @Getter
 @Builder
 @AllArgsConstructor
@@ -22,5 +22,4 @@ public class DailySalesGroup {
     private String date; // yyyy-MM-dd, shop-local
     private BigDecimal total;
     private long orders;
-    private List<DailySalesRow> rows;
 }
