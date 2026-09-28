@@ -215,8 +215,22 @@ window.AdminStats = (() => {
   }
 
   // Full order details fetched on tap, keyed by order id, so re-opening a
-  // row an admin already expanded doesn't hit the server again.
+  // row an admin already expanded doesn't hit the server again. Capped —
+  // without a limit this would grow for as long as the tab stays open,
+  // one entry per distinct order ever tapped. A Map keeps insertion
+  // order, so the oldest entry is just its first key; dropping that one
+  // before adding a new entry past the cap keeps memory bounded while
+  // still caching whatever's been looked at most recently.
   const orderDetailCache = new Map();
+  const ORDER_DETAIL_CACHE_MAX = 200;
+
+  function cacheOrderDetail(id, html) {
+    if (orderDetailCache.size >= ORDER_DETAIL_CACHE_MAX) {
+      const oldestId = orderDetailCache.keys().next().value;
+      orderDetailCache.delete(oldestId);
+    }
+    orderDetailCache.set(id, html);
+  }
 
   // Delegated once on the container rather than per-row, so it keeps
   // working across re-renders (a fresh Apply replaces rangeResult's
@@ -245,7 +259,7 @@ window.AdminStats = (() => {
     try {
       const order = await Api.get(`/api/admin/orders/${id}`);
       const html = orderDetailHtml(order);
-      orderDetailCache.set(id, html);
+      cacheOrderDetail(id, html);
       // The row may have been collapsed again while this was in flight —
       // don't fill it back in if the admin already closed it.
       if (row.classList.contains("is-open")) {
