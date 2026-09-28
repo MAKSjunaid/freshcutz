@@ -187,11 +187,11 @@ window.AdminStats = (() => {
 
   /** The applied date range's orders, grouped day by day (newest first) —
    *  shown under the range total so an admin can see exactly which orders
-   *  make up that total/count instead of just the two numbers. Each row
-   *  is collapsed to its code/amount/customer/time by default (that's all
-   *  Apply ever transfers) and expands in place to the full order detail
-   *  — fetched from the server only at that moment, see the delegated
-   *  click listener below. */
+   *  make up that total/count instead of just the two numbers. Apply
+   *  itself only ever ships one row per DAY (date/total/count) — a day's
+   *  individual orders are fetched only once an admin taps that day's
+   *  header, and an order's full detail only once they tap that order,
+   *  both via the delegated click listener below. */
   function dailyBreakdownHtml(daily) {
     if (!daily || daily.length === 0) {
       return `<div class="empty-state"><p>No delivered orders in this range.</p></div>`;
@@ -201,13 +201,11 @@ window.AdminStats = (() => {
         .map(
           (day) => `
         <div class="daily-sales-group anim-fade-up">
-          <div class="daily-sales-head">
-            <span class="daily-sales-date">${formatDateHeading(day.date)}</span>
+          <button type="button" class="daily-sales-head" data-role="day-toggle" data-date="${day.date}">
+            <span class="daily-sales-date"><span class="daily-sales-head-chevron">▸</span>${formatDateHeading(day.date)}</span>
             <span class="daily-sales-day-total">${Utils.formatMoney(day.total)} · ${day.orders} order${day.orders === 1 ? "" : "s"}</span>
-          </div>
-          <div class="daily-sales-rows">
-            ${day.rows.map(orderRowHtml).join("")}
-          </div>
+          </button>
+          <div class="daily-sales-rows" hidden></div>
         </div>`
         )
         .join("")}
@@ -232,6 +230,21 @@ window.AdminStats = (() => {
     orderDetailCache.set(id, html);
   }
 
+  // A day's individual orders, fetched on tap, keyed by date (yyyy-MM-dd)
+  // so re-expanding a day an admin already opened doesn't hit the server
+  // again. Capped the same way as orderDetailCache above, for the same
+  // reason — a long-lived tab shouldn't grow this forever.
+  const dayOrdersCache = new Map();
+  const DAY_ORDERS_CACHE_MAX = 60;
+
+  function cacheDayOrders(date, html) {
+    if (dayOrdersCache.size >= DAY_ORDERS_CACHE_MAX) {
+      const oldestDate = dayOrdersCache.keys().next().value;
+      dayOrdersCache.delete(oldestDate);
+    }
+    dayOrdersCache.set(date, html);
+  }
+
   // Delegated once on the container rather than per-row, so it keeps
   // working across re-renders (a fresh Apply replaces rangeResult's
   // innerHTML entirely). Tapping anywhere on a row's summary toggles just
@@ -241,6 +254,42 @@ window.AdminStats = (() => {
   // extra request per order an admin actually chooses to look at.
   rangeResult.addEventListener("click", async (e) => {
     if (e.target.closest("a")) return; // a tel: link inside an already-open row — dial, don't collapse it
+
+    // Level 1: a day header — lazily fetches that single day's lightweight
+    // order rows (code/amount/customer/time only), the same shape Apply
+    // used to ship for every order in the whole range up front.
+    const dayToggle = e.target.closest('[data-role="day-toggle"]');
+    if (dayToggle) {
+      const group = dayToggle.closest(".daily-sales-group");
+      const rowsContainer = group.querySelector(".daily-sales-rows");
+      const isOpen = group.classList.toggle("is-open");
+      rowsContainer.hidden = !isOpen;
+      if (!isOpen) return;
+
+      const date = dayToggle.dataset.date;
+      if (dayOrdersCache.has(date)) {
+        rowsContainer.innerHTML = dayOrdersCache.get(date);
+        return;
+      }
+
+      rowsContainer.innerHTML = `<div class="daily-sales-row-loading"><span class="spinner spinner-dark"></span> Loading orders…</div>`;
+      try {
+        const rows = await Api.get(`/api/admin/orders/summary/range/daily/${date}`);
+        const html = rows.map(orderRowHtml).join("");
+        cacheDayOrders(date, html);
+        // The day may have been collapsed again while this was in flight —
+        // don't fill it back in if the admin already closed it.
+        if (group.classList.contains("is-open")) {
+          rowsContainer.innerHTML = html;
+        }
+      } catch (err) {
+        rowsContainer.innerHTML = `<div class="daily-sales-row-loading">${Utils.escapeHtml(err.message)}</div>`;
+      }
+      return;
+    }
+
+    // Level 2: an individual order row — unchanged from before, just no
+    // longer reachable until its day has been expanded first.
     const toggleBtn = e.target.closest('[data-role="toggle"]');
     if (!toggleBtn) return;
     const row = toggleBtn.closest(".daily-sales-row");
