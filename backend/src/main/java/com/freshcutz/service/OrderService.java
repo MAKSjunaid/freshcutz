@@ -132,6 +132,15 @@ public class OrderService {
                 .collect(Collectors.toList());
     }
 
+    /** Full detail (address, notes, items) for exactly one order — backs
+     * the Sales tab's on-tap detail fetch (AdminOrderController's
+     * GET /{id}), so an admin opening one order's row costs one small
+     * request, not the whole range's worth of full order data up front. */
+    @Transactional(readOnly = true)
+    public OrderResponse getById(Long id) {
+        return OrderResponse.from(getEntity(id));
+    }
+
     @Transactional
     public OrderResponse markDelivered(Long id) {
         Order order = getEntity(id);
