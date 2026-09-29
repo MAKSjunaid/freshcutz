@@ -6,7 +6,7 @@ import lombok.Getter;
 
 import java.math.BigDecimal;
 
-/** One day's total within an admin-picked date range — see
+/** One day's total within an admin-picked date rangee — see
  * SalesService.getDailyRangeSummary(). Just the day, its total, and its
  * order count: deliberately NOT the individual orders themselves. An
  * Apply click used to ship every order in the whole range up front (as
