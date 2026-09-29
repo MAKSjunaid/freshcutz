@@ -103,6 +103,31 @@ window.AdminStats = (() => {
   fromInput.addEventListener("input", () => syncDateHint(fromInput, fromHint));
   toInput.addEventListener("input", () => syncDateHint(toInput, toHint));
 
+  // Desktop Chrome/Edge only open the native calendar when the click
+  // lands on the small icon at the input's own right edge — clicking
+  // anywhere else in the box just places a text cursor. showPicker()
+  // opens the same calendar programmatically, so calling it on any
+  // click makes the whole box act as the trigger, not just that icon.
+  // It is a newer API (not on older Safari/Firefox); where it is
+  // missing this is a no-op and the browser's own default click
+  // behavior on the icon still works exactly as before.
+  function bindWholeBoxOpensPicker(input) {
+    input.addEventListener("click", () => {
+      if (typeof input.showPicker === "function") {
+        try {
+          input.showPicker();
+        } catch (_) {
+          // Can refuse outside a direct user gesture, or if the
+          // picker is already open — the ordinary click still
+          // does whatever the browser would have done anyway.
+        }
+      }
+    });
+  }
+
+  bindWholeBoxOpensPicker(fromInput);
+  bindWholeBoxOpensPicker(toInput);
+
   function selectedRange() {
     const from = fromInput.value;
     const to = toInput.value;
