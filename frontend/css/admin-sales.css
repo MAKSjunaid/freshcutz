@@ -10,6 +10,18 @@
   margin-bottom: var(--sp-4);
 }
 
+/* Two rows on mobile, always: From+To on their own row, filling its
+   full width 50/50, and Apply(+Clear) on a row of their own underneath
+   — never sharing a row with the date fields. That is what keeps the
+   date boxes a fixed, equal size no matter what state the toolbar is
+   in (empty, a date picked, Clear now visible next to Apply): nothing
+   about those states ever changes how much width is available to the
+   fields row, because Apply/Clear live in a separate row entirely.
+   flex-basis: 100% on .date-range-actions is what forces that row
+   break in a wrapping flex container, regardless of how much space is
+   technically left on the fields' line. Collapses back to one single
+   inline row at the 640px breakpoint below, where there is always
+   room for everything together. */
 .date-range-row {
   display: flex;
   align-items: center;
@@ -19,18 +31,23 @@
 
 .date-range-actions {
   display: flex;
+  flex-basis: 100%;
   gap: 8px;
 }
 
-/* flex-basis AND min-width are both set (not the usual min-width: 0) so
-   this field can never be squeezed narrower than a full selected date
-   needs — with min-width: 0 the flex algorithm will shrink an item to
-   fit its line instead of wrapping, which is what was clipping a
-   picked date's text. From and To share the same flex-grow, so they
-   split whatever room is left in the row evenly between the two of
-   them once Apply/Clear have taken theirs. */
+#applyRangeBtn {
+  flex: 1;
+}
+
+/* flex-basis: 0 with a shared flex-grow is a pure 50/50 split of the
+   fields row, unaffected by either box's content (hint text vs. a
+   picked date) — that is what keeps From and To exactly the same size
+   as each other in every state. min-width is still the floor that
+   keeps a picked date from ever getting clipped — with min-width: 0
+   the flex algorithm would shrink an item to fit its line instead of
+   wrapping, which is what used to clip a picked date's text. */
 .date-field {
-  flex: 1 1 140px;
+  flex: 1 1 0;
   min-width: 140px;
 }
 
@@ -255,4 +272,6 @@
 
 @media (min-width: 640px) {
   .date-range-row { flex-wrap: nowrap; }
+  .date-range-actions { flex-basis: auto; }
+  #applyRangeBtn { flex: 0 0 auto; }
 }
