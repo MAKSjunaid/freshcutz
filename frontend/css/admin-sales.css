@@ -1,277 +1,164 @@
-/* ==========================================================================
-   Sales tab: date-range filter, export/import toolbar, and the import
-   result panel. Split out of admin-cards.css to keep that file smaller.
-   ========================================================================== */
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>FreshCutz Admin</title>
+<meta name="robots" content="noindex, nofollow" />
+<link rel="icon" href="images/logo.jpg" />
+<!-- Lets the admin "Add to Home Screen" (required on iPhone before push
+     notifications will work at all) and gives Web Push its icon. -->
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="images/logo.jpg" />
+<meta name="theme-color" content="#1c1712" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="stylesheet" href="css/variables.css" />
+<link rel="stylesheet" href="css/base.css" />
+<link rel="stylesheet" href="css/animations.css" />
+<link rel="stylesheet" href="css/components.css" />
+<link rel="stylesheet" href="css/cart.css" />
+<link rel="stylesheet" href="css/admin-shell.css" />
+<link rel="stylesheet" href="css/admin-cards.css" />
+<link rel="stylesheet" href="css/admin-sales.css" />
+<link rel="stylesheet" href="css/admin-customers.css" />
+</head>
+<body class="admin">
 
-.sales-toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-4);
-}
+  <!-- Login screen -->
+  <div class="login-screen" id="loginScreen">
+    <div class="login-card anim-scale-in">
+      <img src="images/logo.jpg" alt="FreshCutz" />
+      <h1>FreshCutz Admin</h1>
+      <p>Sign in to manage products &amp; orders</p>
+      <form id="loginForm">
+        <div class="field">
+          <label for="lg-username">Username</label>
+          <input id="lg-username" name="username" required autocomplete="username" />
+        </div>
+        <div class="field">
+          <label for="lg-password">Password</label>
+          <input id="lg-password" name="password" type="password" required autocomplete="current-password" />
+          <div class="error" id="loginError"></div>
+        </div>
+        <button class="btn btn-gold btn-block" id="loginBtn" type="submit">Sign In</button>
+      </form>
+    </div>
+  </div>
 
-/* Two rows on mobile, always: From+To on their own row, filling its
-   full width 50/50, and Apply(+Clear) on a row of their own underneath
-   — never sharing a row with the date fields. That is what keeps the
-   date boxes a fixed, equal size no matter what state the toolbar is
-   in (empty, a date picked, Clear now visible next to Apply): nothing
-   about those states ever changes how much width is available to the
-   fields row, because Apply/Clear live in a separate row entirely.
-   flex-basis: 100% on .date-range-actions is what forces that row
-   break in a wrapping flex container, regardless of how much space is
-   technically left on the fields' line. Collapses back to one single
-   inline row at the 640px breakpoint below, where there is always
-   room for everything together. */
-.date-range-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+  <!-- Admin app -->
+  <div id="adminApp" hidden>
+    <div class="admin-header-group">
+      <header class="admin-topbar">
+        <div class="brand-text">
+          <div class="name">FRESHCUTZ ADMIN</div>
+        </div>
+        <div class="topbar-actions">
+          <div class="store-toggle">
+            <span class="store-toggle-label" id="storeToggleLabel">Online</span>
+            <label class="switch">
+              <input type="checkbox" id="storeOnlineToggle" checked />
+              <span class="track"></span>
+            </label>
+          </div>
+          <button class="btn btn-ghost btn-sm push-toggle-btn" id="pushToggleBtn" hidden title="Enable order alerts on this device">🔔</button>
+          <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
+        </div>
+      </header>
 
-.date-range-actions {
-  display: flex;
-  flex-basis: 100%;
-  gap: 8px;
-}
+      <div class="push-ios-banner" id="pushIosBanner" hidden>
+        <span>📲 To get order alerts on this iPhone: tap Share, then "Add to Home Screen" — then open FreshCutz Admin from your Home Screen and tap "Enable alerts".</span>
+        <button id="pushIosBannerClose" aria-label="Dismiss">✕</button>
+      </div>
 
-#applyRangeBtn {
-  flex: 1;
-}
+      <nav class="admin-tabs">
+        <button class="admin-tab active" data-view="orders">📦 Orders <span class="count-pill" id="newOrdersPill" hidden>0</span></button>
+        <button class="admin-tab" data-view="products">🍗 Products</button>
+        <button class="admin-tab" data-view="stats">📊 Sales</button>
+        <button class="admin-tab" data-view="customers">👥 Customers</button>
+      </nav>
+    </div>
 
-/* flex-basis: 0 with a shared flex-grow is a pure 50/50 split of the
-   fields row, unaffected by either box's content (hint text vs. a
-   picked date) — that is what keeps From and To exactly the same size
-   as each other in every state. min-width is still the floor that
-   keeps a picked date from ever getting clipped — with min-width: 0
-   the flex algorithm would shrink an item to fit its line instead of
-   wrapping, which is what used to clip a picked date's text. */
-.date-field {
-  flex: 1 1 0;
-  min-width: 140px;
-}
+    <section class="admin-view active" id="view-orders">
+      <div class="search-row">
+        <input type="search" id="orderSearchInput" class="search-input" placeholder="🔎 Search by order ID, phone or name" />
+      </div>
+      <div class="admin-tabs" style="position:static;padding:0 0 var(--sp-3);background:transparent;border:none;" id="orderStatusFilter">
+        <button class="admin-tab" data-status="">All</button>
+        <button class="admin-tab active" data-status="NEW">New</button>
+        <button class="admin-tab" data-status="DELIVERED">Delivered</button>
+        <button class="admin-tab" data-status="CANCELLED">Cancelled</button>
+      </div>
+      <div id="ordersList"></div>
+    </section>
 
-.date-field-box {
-  position: relative;
-}
+    <section class="admin-view" id="view-products">
+      <div id="productsList"></div>
+      <button class="fab" id="addProductFab" aria-label="Add product">+</button>
+    </section>
 
-/* Sits on top of the real input, fully opaque and matching its own
-   border/background/radius exactly — so while it is showing, the two
-   look like one normal input with a hint in it, and it never doubles
-   up with whatever the browser itself would have drawn (a blank box,
-   or its own native format hint, depending on the device — either
-   way this simply covers it). admin-stats.js hides this the moment
-   the input actually gets a value, and shows it again on Clear.
-   pointer-events: none lets a tap pass straight through to open the
-   native date picker underneath. */
-.date-field-hint {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  border-radius: var(--r-sm);
-  border: 1.5px solid #e6dcc0;
-  background: #fff;
-  font-size: 16px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
+    <section class="admin-view" id="view-stats">
+      <div class="sales-toolbar">
+        <div class="date-range-row">
+          <div class="date-field">
+            <div class="date-field-box">
+              <input type="date" id="statsFrom" aria-label="From date" />
+              <!-- Own in-box hint, shown/hidden by admin-stats.js based on
+                   whether the input actually has a value — a real
+                   placeholder="" attribute is ignored by type="date" on
+                   iOS Safari and most Android browsers, so this fully
+                   opaque overlay stands in for one instead, and gets out
+                   of the way once a date is picked. -->
+              <span class="date-field-hint" id="statsFromHint">From Date</span>
+            </div>
+          </div>
+          <div class="date-field">
+            <div class="date-field-box">
+              <input type="date" id="statsTo" aria-label="To date" />
+              <span class="date-field-hint" id="statsToHint">To Date</span>
+            </div>
+          </div>
+          <div class="date-range-actions">
+            <button class="btn btn-gold btn-sm" id="applyRangeBtn">Apply</button>
+            <button class="btn btn-ghost btn-sm" id="clearRangeBtn" hidden>Clear</button>
+          </div>
+        </div>
+        <div class="sales-actions-row">
+          <button class="btn btn-outline btn-sm" id="exportFilteredBtn" hidden>⬇ Export filtered</button>
+          <button class="btn btn-outline btn-sm" id="exportAllBtn">⬇ Export all</button>
+          <label class="btn btn-ghost btn-sm file-btn">
+            ⬆ Import
+            <input type="file" id="importFile" accept=".xlsx" hidden />
+          </label>
+        </div>
+      </div>
+      <div class="range-result" id="rangeResult" hidden></div>
+      <div class="import-result" id="importResult" hidden></div>
+      <div class="stats-grid" id="statsGrid"></div>
+    </section>
 
-.date-range-row input[type="date"] {
-  width: 100%;
-  min-width: 0;
-  padding: 9px 10px;
-  border-radius: var(--r-sm);
-  border: 1.5px solid #e6dcc0;
-  background: #fff;
-  /* 16px minimum — under that, iOS Safari zooms the page in on tap. */
-  font-size: 16px;
-}
+    <section class="admin-view" id="view-customers">
+      <div class="search-row">
+        <input type="search" id="customerSearchInput" class="search-input" placeholder="🔎 Search by phone or name" />
+      </div>
+      <div id="customersList"></div>
+    </section>
+  </div>
 
-.sales-actions-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+  <div id="sheetRoot"></div>
+  <div id="toastHost"></div>
 
-.file-btn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.range-result,
-.import-result {
-  margin-bottom: var(--sp-4);
-}
-
-/* ---- Date-wise breakdown, under the range total's stat card ------------ */
-.daily-sales {
-  margin-top: var(--sp-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
-.daily-sales-group {
-  background: var(--bg-card);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-sm);
-  padding: var(--sp-3) var(--sp-4);
-}
-
-/* Tap target for expanding a day — a plain <button> reset back to look
-   like the row it replaces, not a button, matching the same treatment
-   already used for .daily-sales-row-summary below. */
-.daily-sales-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--sp-2);
-  width: 100%;
-  padding: 0;
-  background: none;
-  border: none;
-  font: inherit;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-}
-
-/* The separator under the head only makes sense once there's something
-   underneath it to separate from — collapsed, it just reads as a stray
-   line under a single row. */
-.daily-sales-group.is-open .daily-sales-head {
-  padding-bottom: 8px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid #eee3cc;
-}
-
-.daily-sales-head-chevron {
-  display: inline-block;
-  width: 12px;
-  margin-right: 4px;
-  color: var(--text-muted);
-  transition: transform var(--dur-fast) var(--ease-out);
-}
-
-.daily-sales-group.is-open .daily-sales-head-chevron {
-  transform: rotate(90deg);
-}
-
-.daily-sales-rows {
-  animation: fadeUp var(--dur-fast) var(--ease-out) both;
-}
-
-.daily-sales-date {
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--ink);
-}
-
-.daily-sales-day-total {
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.daily-sales-row {
-  padding: 7px 0;
-}
-
-.daily-sales-row + .daily-sales-row {
-  border-top: 1px dashed #eee3cc;
-}
-
-.daily-sales-row-top {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.daily-sales-row-sub {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  font-size: 11.5px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-/* Tap target for expanding a row — a plain <button> reset back to look
-   like the text it wraps, not a button. */
-.daily-sales-row-summary {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-
-.daily-sales-row-chevron {
-  display: inline-block;
-  width: 12px;
-  margin-right: 4px;
-  color: var(--text-muted);
-  transition: transform var(--dur-fast) var(--ease-out);
-}
-
-.daily-sales-row.is-open .daily-sales-row-chevron {
-  transform: rotate(90deg);
-}
-
-.daily-sales-row-details {
-  margin-top: 8px;
-  animation: fadeUp var(--dur-fast) var(--ease-out) both;
-}
-
-.daily-sales-row-details .order-items-list {
-  margin-top: 8px;
-}
-
-/* Shown in a row's detail panel while its full order detail is being
-   fetched on first tap (see admin-stats.js). */
-.daily-sales-row-loading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 12.5px;
-  color: var(--text-muted);
-}
-
-/* .spinner (animations.css) defaults to a near-invisible ring meant for a
-   solid/dark button background — this row's own background is light, so
-   give it a gold ring instead. */
-.spinner-dark {
-  border-color: rgba(201, 161, 59, 0.25);
-  border-top-color: var(--gold);
-}
-
-.import-errors {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #ddd1ae;
-  font-size: 11.5px;
-  color: var(--danger);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-@media (min-width: 640px) {
-  .date-range-row { flex-wrap: nowrap; }
-  .date-range-actions { flex-basis: auto; }
-  #applyRangeBtn { flex: 0 0 auto; }
-}
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/toast.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/admin-auth.js"></script>
+  <script src="js/admin-store.js"></script>
+  <script src="js/admin-push.js"></script>
+  <script src="js/admin-products.js"></script>
+  <script src="js/admin-orders.js"></script>
+  <script src="js/admin-stats.js"></script>
+  <script src="js/admin-customers.js"></script>
+  <script src="js/admin-main.js"></script>
+</body>
+</html>
