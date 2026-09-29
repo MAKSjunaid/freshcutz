@@ -104,12 +104,14 @@
             <div class="date-field">
               <div class="date-field-box">
                 <input type="date" id="statsFrom" aria-label="From date" />
-                <!-- Own in-box hint, shown/hidden by admin-stats.js based on
-                     whether the input actually has a value — a real
-                     placeholder="" attribute is ignored by type="date" on
-                     iOS Safari and most Android browsers, so this fully
-                     opaque overlay stands in for one instead, and gets out
-                     of the way once a date is picked. -->
+                <!-- The real input above is fully invisible (see
+                     admin-sales.css) — this box is the only thing ever
+                     shown. admin-stats.js keeps its text in sync: the
+                     placeholder below while empty, the picked date once
+                     one is chosen. A real placeholder="" attribute is
+                     ignored by type="date" on iOS Safari and most Android
+                     browsers, and showing the native input's own value
+                     directly is what caused the iOS-only box-size bug. -->
                 <span class="date-field-hint" id="statsFromHint">From Date</span>
               </div>
             </div>
