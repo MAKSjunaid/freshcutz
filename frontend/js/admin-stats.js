@@ -6,6 +6,8 @@ window.AdminStats = (() => {
   const pill = document.getElementById("newOrdersPill");
   const fromInput = document.getElementById("statsFrom");
   const toInput = document.getElementById("statsTo");
+  const fromHint = document.getElementById("statsFromHint");
+  const toHint = document.getElementById("statsToHint");
   const applyBtn = document.getElementById("applyRangeBtn");
   const clearBtn = document.getElementById("clearRangeBtn");
   const rangeResult = document.getElementById("rangeResult");
@@ -86,6 +88,20 @@ window.AdminStats = (() => {
       return false;
     }
   }
+
+  // The box's own in-box hint ("From Date" / "To Date") is a fully opaque
+  // overlay sitting on top of the real <input type="date"> — see
+  // .date-field-hint in admin-sales.css for why. It has to be hidden
+  // the moment the input actually has a value (or it would sit on top of
+  // the picked date too) and shown again once it is empty, which a plain
+  // placeholder attribute can not do for a date input on most mobile
+  // browsers.
+  function syncDateHint(input, hint) {
+    hint.hidden = !!input.value;
+  }
+
+  fromInput.addEventListener("input", () => syncDateHint(fromInput, fromHint));
+  toInput.addEventListener("input", () => syncDateHint(toInput, toHint));
 
   function selectedRange() {
     const from = fromInput.value;
@@ -387,6 +403,10 @@ window.AdminStats = (() => {
   function clearRange() {
     fromInput.value = "";
     toInput.value = "";
+    // Setting .value directly (rather than the admin picking a date) does
+    // not fire an "input" event, so the hints need re-showing by hand.
+    syncDateHint(fromInput, fromHint);
+    syncDateHint(toInput, toHint);
     rangeResult.hidden = true;
     rangeResult.innerHTML = "";
     grid.hidden = false;
