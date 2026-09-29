@@ -89,19 +89,46 @@ window.AdminStats = (() => {
     }
   }
 
-  // The box's own in-box hint ("From Date" / "To Date") is a fully opaque
-  // overlay sitting on top of the real <input type="date"> — see
-  // .date-field-hint in admin-sales.css for why. It has to be hidden
-  // the moment the input actually has a value (or it would sit on top of
-  // the picked date too) and shown again once it is empty, which a plain
-  // placeholder attribute can not do for a date input on most mobile
-  // browsers.
-  function syncDateHint(input, hint) {
-    hint.hidden = !!input.value;
+  // The real <input type="date"> is fully invisible (see admin-sales.css)
+  // — .date-field-hint is the only thing ever actually shown for this
+  // field, so it has to display whatever the real input's state is:
+  // the placeholder text while empty, or the picked date, formatted by
+  // us, once one is chosen. A plain placeholder attribute can not do
+  // this for a date input on most mobile browsers, and showing the
+  // native input itself is what caused the iOS-only box-shrinking /
+  // "second box" bug in the first place.
+  const DATE_MONTHS = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+
+  function formatDateDisplay(value) {
+    // value is "YYYY-MM-DD" (the native <input type="date"> format).
+    const parts = value.split("-").map(Number);
+    if (parts.length !== 3 || parts.some(Number.isNaN)) return value;
+    const [y, m, d] = parts;
+    const dt = new Date(y, m - 1, d);
+    return `${dt.getDate()} ${DATE_MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
   }
 
-  fromInput.addEventListener("input", () => syncDateHint(fromInput, fromHint));
-  toInput.addEventListener("input", () => syncDateHint(toInput, toHint));
+  function syncDateHint(input, hint, placeholder) {
+    if (input.value) {
+      hint.textContent = formatDateDisplay(input.value);
+      hint.classList.add("has-value");
+    } else {
+      hint.textContent = placeholder;
+      hint.classList.remove("has-value");
+    }
+  }
+
+  fromInput.addEventListener("input", () => syncDateHint(fromInput, fromHint, "From Date"));
+  toInput.addEventListener("input", () => syncDateHint(toInput, toHint, "To Date"));
+
+  // In case either input already has a value at load time (e.g. the
+  // browser restored form state), sync the display box immediately
+  // rather than waiting for the first "input" event.
+  syncDateHint(fromInput, fromHint, "From Date");
+  syncDateHint(toInput, toHint, "To Date");
 
   // Desktop Chrome/Edge only open the native calendar when the click
   // lands on the small icon at the input's own right edge — clicking
@@ -429,9 +456,10 @@ window.AdminStats = (() => {
     fromInput.value = "";
     toInput.value = "";
     // Setting .value directly (rather than the admin picking a date) does
-    // not fire an "input" event, so the hints need re-showing by hand.
-    syncDateHint(fromInput, fromHint);
-    syncDateHint(toInput, toHint);
+    // not fire an "input" event, so the display boxes need re-syncing by
+    // hand, back to their placeholder text.
+    syncDateHint(fromInput, fromHint, "From Date");
+    syncDateHint(toInput, toHint, "To Date");
     rangeResult.hidden = true;
     rangeResult.innerHTML = "";
     grid.hidden = false;
