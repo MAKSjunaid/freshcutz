@@ -54,6 +54,15 @@
 
 .date-field-box {
   position: relative;
+  /* A fixed height, not just min-height: on iOS Safari a focused
+     type="date" input can report a different (larger) intrinsic
+     content size than the same input unfocused. As long as the
+     input stays IN FLOW, that focused-state intrinsic size can push
+     back on this box's own sizing the instant you tap it — which is
+     exactly the bug where the box visibly shrinks/reflows to hug
+     "26 Sep 2026" on tap. Fixing the height here, then taking the
+     input fully out of flow below, removes that path entirely. */
+  height: 42px;
 }
 
 /* Sits on top of the real input, fully opaque and matching its own
@@ -80,7 +89,17 @@
 }
 
 .date-range-row input[type="date"] {
+  /* Taken fully out of flow, exactly like .date-field-hint above, so
+     the input can never contribute to (or fight) .date-field-box's
+     own width/height. Its box is now set entirely by the CSS Grid
+     track on .date-range-fields plus the fixed height on
+     .date-field-box above — the input just fills whatever space it's
+     given and can no longer shrink that space to fit its own
+     focused-state content, which is what iOS Safari was doing. */
+  position: absolute;
+  inset: 0;
   width: 100%;
+  height: 100%;
   min-width: 0;
   padding: 9px 10px;
   border-radius: var(--r-sm);
