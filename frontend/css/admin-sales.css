@@ -20,6 +20,28 @@
   flex-wrap: wrap;
 }
 
+/* On a narrow phone, From + To + Apply were all fighting for the same
+   row — each date box has to stay wide enough to hold a full picked
+   date (see .date-field below), which left Apply squeezed into
+   whatever was left over, and Clear wrapping to an orphan line by
+   itself. Grouping Apply+Clear into their own block and forcing it
+   onto its own full-width row (flex-basis: 100% forces a wrap in a
+   wrapping flex container, regardless of how much space is actually
+   left) means the date fields get the whole first row to themselves,
+   and the actions get a clean, consistently-sized row of their own
+   instead of a leftover sliver. Reset back to sitting inline at the
+   640px breakpoint below, where .date-range-row itself goes back to
+   nowrap and there's room for everything on one line. */
+.date-range-actions {
+  display: flex;
+  flex-basis: 100%;
+  gap: 8px;
+}
+
+#applyRangeBtn {
+  flex: 1;
+}
+
 /* Wraps each date input with its own always-visible "From"/"To" caption
    above it — a plain placeholder attribute wouldn't do here on its own,
    since type="date" inputs ignore it on iOS Safari and most Android
@@ -244,4 +266,6 @@
 
 @media (min-width: 640px) {
   .date-range-row { flex-wrap: nowrap; }
+  .date-range-actions { flex-basis: auto; }
+  #applyRangeBtn { flex: 0 0 auto; }
 }
