@@ -12,64 +12,53 @@
 
 .date-range-row {
   display: flex;
-  /* flex-end, not center — each date field is now a two-line label+input
-     stack, and this keeps the inputs lined up with the Apply/Clear
-     buttons instead of the whole stack sitting centered against them. */
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-/* On a narrow phone, From + To + Apply were all fighting for the same
-   row — each date box has to stay wide enough to hold a full picked
-   date (see .date-field below), which left Apply squeezed into
-   whatever was left over, and Clear wrapping to an orphan line by
-   itself. Grouping Apply+Clear into their own block and forcing it
-   onto its own full-width row (flex-basis: 100% forces a wrap in a
-   wrapping flex container, regardless of how much space is actually
-   left) means the date fields get the whole first row to themselves,
-   and the actions get a clean, consistently-sized row of their own
-   instead of a leftover sliver. Reset back to sitting inline at the
-   640px breakpoint below, where .date-range-row itself goes back to
-   nowrap and there's room for everything on one line. */
 .date-range-actions {
   display: flex;
-  flex-basis: 100%;
   gap: 8px;
 }
 
-#applyRangeBtn {
-  flex: 1;
-}
-
-/* Wraps each date input with its own always-visible "From"/"To" caption
-   above it — a plain placeholder attribute wouldn't do here on its own,
-   since type="date" inputs ignore it on iOS Safari and most Android
-   browsers. (A custom "Select date" hint drawn inside the box itself was
-   tried too, but on devices whose browser already renders its own native
-   "dd-mm-yyyy" hint for an empty date field, that meant showing two
-   overlapping hints at once — so the box's own native rendering is left
-   alone, and this caption is the only thing added.)
-   flex-basis AND min-width are both set (not the usual min-width: 0) so
+/* flex-basis AND min-width are both set (not the usual min-width: 0) so
    this field can never be squeezed narrower than a full selected date
    needs — with min-width: 0 the flex algorithm will shrink an item to
-   fit its line instead of wrapping, which is what was clipping a picked
-   date's text; now the row wraps Apply/Clear to their own line instead
-   of compressing the date boxes. */
+   fit its line instead of wrapping, which is what was clipping a
+   picked date's text. From and To share the same flex-grow, so they
+   split whatever room is left in the row evenly between the two of
+   them once Apply/Clear have taken theirs. */
 .date-field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
   flex: 1 1 140px;
   min-width: 140px;
 }
 
-.date-field-label {
-  font-size: 11px;
-  font-weight: 700;
+.date-field-box {
+  position: relative;
+}
+
+/* Sits on top of the real input, fully opaque and matching its own
+   border/background/radius exactly — so while it is showing, the two
+   look like one normal input with a hint in it, and it never doubles
+   up with whatever the browser itself would have drawn (a blank box,
+   or its own native format hint, depending on the device — either
+   way this simply covers it). admin-stats.js hides this the moment
+   the input actually gets a value, and shows it again on Clear.
+   pointer-events: none lets a tap pass straight through to open the
+   native date picker underneath. */
+.date-field-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  border: 1.5px solid #e6dcc0;
+  background: #fff;
+  font-size: 16px;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 .date-range-row input[type="date"] {
@@ -266,6 +255,4 @@
 
 @media (min-width: 640px) {
   .date-range-row { flex-wrap: nowrap; }
-  .date-range-actions { flex-basis: auto; }
-  #applyRangeBtn { flex: 0 0 auto; }
 }
