@@ -63,17 +63,28 @@
      "26 Sep 2026" on tap. Fixing the height here, then taking the
      input fully out of flow below, removes that path entirely. */
   height: 42px;
+  /* iOS's own internal rendering for the native control can want a
+     little more room than we give it here, and — unlike a normal
+     box — that isn't clipped by default just because the box has a
+     fixed height. overflow: hidden is what actually clips it, so
+     nothing from the (now invisible, see below) native control can
+     ever poke out past our own visible box. */
+  overflow: hidden;
 }
 
-/* Sits on top of the real input, fully opaque and matching its own
-   border/background/radius exactly — so while it is showing, the two
-   look like one normal input with a hint in it, and it never doubles
-   up with whatever the browser itself would have drawn (a blank box,
-   or its own native format hint, depending on the device — either
-   way this simply covers it). admin-stats.js hides this the moment
-   the input actually gets a value, and shows it again on Clear.
-   pointer-events: none lets a tap pass straight through to open the
-   native date picker underneath. */
+/* The ONLY visible part of the field. The real <input type="date">
+   underneath is fully transparent (see below) — its native styling
+   on iOS is unreliable (a control that can render smaller than its
+   own box, at a different size focused vs. not, sometimes even with
+   its own background instead of ours). Rather than fight that, we
+   never show it at all: this box always displays either the
+   placeholder ("From Date" / "To Date") or, once a date is picked,
+   that date formatted by us — admin-stats.js keeps the text and the
+   .has-value class in sync with the real input's value. Because this
+   box's own size never depends on the native input's content, it
+   can't shrink or shift no matter what iOS does underneath.
+   pointer-events: none lets every tap pass straight through to the
+   real input below, which is what actually opens the picker. */
 .date-field-hint {
   position: absolute;
   inset: 0;
@@ -88,6 +99,10 @@
   pointer-events: none;
 }
 
+.date-field-hint.has-value {
+  color: var(--text-main);
+}
+
 .date-range-row input[type="date"] {
   /* Taken fully out of flow, exactly like .date-field-hint above, so
      the input can never contribute to (or fight) .date-field-box's
@@ -95,7 +110,15 @@
      track on .date-range-fields plus the fixed height on
      .date-field-box above — the input just fills whatever space it's
      given and can no longer shrink that space to fit its own
-     focused-state content, which is what iOS Safari was doing. */
+     focused-state content, which is what iOS Safari was doing.
+
+     opacity: 0 makes it fully invisible — .date-field-hint (on top,
+     pointer-events: none) is the only thing ever actually seen. That
+     also gets rid of the "second, smaller box" artifact some iOS
+     versions produce: whatever size or shape iOS chooses to render
+     the native control at no longer matters, since nothing about it
+     is shown. It still fully overlaps the visible box and still
+     receives the tap, which is what opens the native date picker. */
   position: absolute;
   inset: 0;
   width: 100%;
@@ -103,8 +126,9 @@
   min-width: 0;
   padding: 9px 10px;
   border-radius: var(--r-sm);
-  border: 1.5px solid #e6dcc0;
-  background: #fff;
+  border: none;
+  background: transparent;
+  opacity: 0;
   /* 16px minimum — under that, iOS Safari zooms the page in on tap. */
   font-size: 16px;
 }
