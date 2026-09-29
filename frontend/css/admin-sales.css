@@ -10,28 +10,37 @@
   margin-bottom: var(--sp-4);
 }
 
-/* Two rows on mobile, always: From+To on their own row, filling its
-   full width 50/50, and Apply(+Clear) on a row of their own underneath
-   — never sharing a row with the date fields. That is what keeps the
-   date boxes a fixed, equal size no matter what state the toolbar is
-   in (empty, a date picked, Clear now visible next to Apply): nothing
-   about those states ever changes how much width is available to the
-   fields row, because Apply/Clear live in a separate row entirely.
-   flex-basis: 100% on .date-range-actions is what forces that row
-   break in a wrapping flex container, regardless of how much space is
-   technically left on the fields' line. Collapses back to one single
-   inline row at the 640px breakpoint below, where there is always
-   room for everything together. */
+/* Two rows on mobile: From+To fields on their own row, Apply(+Clear) on
+   a row of its own underneath. .date-range-row is just a column stack
+   of those two rows here; collapses to one single inline row (fields
+   sharing space with the buttons) at the 640px breakpoint below. */
 .date-range-row {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  flex-wrap: wrap;
+}
+
+/* CSS Grid, not flexbox, for the actual From/To split — this is the
+   part that turned out to matter. A flexbox item's width (even with
+   flex-grow/shrink both 0 and an explicit flex-basis) is still allowed
+   to be pulled wider by its content's intrinsic size in some engines,
+   and on iOS Safari specifically that showed up as the box visibly
+   shrinking to hug the picked date the moment one was chosen — a fixed
+   flex-basis percentage was not actually immune to it. A grid track
+   has no such escape hatch: minmax(140px, 1fr) means each column is
+   exactly half the row (down to a 140px floor, big enough that a
+   picked date like "23 Sep 2026" never gets clipped) and two identical
+   track functions are always sized identically to each other — neither
+   column's content, empty hint or filled date, has any way to change
+   that. */
+.date-range-fields {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr);
+  gap: 8px;
 }
 
 .date-range-actions {
   display: flex;
-  flex-basis: 100%;
   gap: 8px;
 }
 
@@ -39,20 +48,8 @@
   flex: 1;
 }
 
-/* A hard, fixed 50% width each (minus half the row's 8px gap) — not
-   flex-grow filling leftover space. flex-grow (even with flex-basis: 0)
-   turned out not to be safe here: Safari/WebKit does not always keep a
-   flex-basis: 0 item's width independent of its content once a form
-   control inside it actually has a value, and on an iPhone that showed
-   up as the box visibly shrinking down to fit the picked date the
-   moment one was chosen. flex-grow/flex-shrink: 0 here means the width
-   is purely a function of the row's own width, full stop — nothing
-   about what is inside the box (empty hint vs. a picked date) can ever
-   change it. min-width is a floor for very narrow screens; on any
-   real phone the 50% share is already well above it. */
 .date-field {
-  flex: 0 0 calc(50% - 4px);
-  min-width: 140px;
+  min-width: 0; /* let the grid track set the width, do not fight it */
 }
 
 .date-field-box {
@@ -275,11 +272,23 @@
 }
 
 @media (min-width: 640px) {
-  .date-range-row { flex-wrap: nowrap; }
-  .date-range-actions { flex-basis: auto; }
+  /* Wide enough for fields + buttons on one single row again. */
+  .date-range-row {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+  .date-range-fields {
+    /* The buttons need their own room here, so the fields no longer
+       own the whole row — let them size by content again instead of
+       forcing a 50/50 grid split of just their own share of it. */
+    display: flex;
+    flex: 1 1 auto;
+    gap: 8px;
+  }
+  .date-field {
+    flex: 1 1 140px;
+    min-width: 140px;
+  }
   #applyRangeBtn { flex: 0 0 auto; }
-  /* Back to flexible sizing here — the fields share the row with
-     Apply/Clear again at this width, so a fixed 50% each would leave
-     no room for the buttons. */
-  .date-field { flex: 1 1 140px; }
 }
