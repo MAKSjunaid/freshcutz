@@ -101,5 +101,9 @@ const Api = (() => {
     del: (path) => request("DELETE", path),
     upload: (path, formData) => request("POST", path, formData, true),
     downloadBlob,
+    // For building an EventSource URL (EventSource has no fetch-style
+    // wrapper of its own to go through request() above) against the same
+    // FRESHCUTZ_API_BASE every other call uses.
+    streamUrl: (path) => `${base()}${path}`,
   };
 })();
