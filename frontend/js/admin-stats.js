@@ -20,10 +20,24 @@ window.AdminStats = (() => {
 
   function card(label, value, sub) {
     return `<div class="stat-card anim-fade-up">
-      <div class="label">${label}</div>
+      <div class="label">${label}<span class="spinner spinner-dark stat-spinner" hidden></span></div>
       <div class="value">${value}</div>
       ${sub ? `<div class="sub">${sub}</div>` : ""}
     </div>`;
+  }
+
+  /** Shows/hides the small spinner next to every card's label at once —
+   * all four numbers come from the same single API call and always
+   * update together, so there's no such thing as just "Today" being
+   * stale while the others are current. Re-queries the DOM live each
+   * time rather than caching the spinner elements, since grid.innerHTML
+   * only actually gets replaced (see refresh() below) when the fetched
+   * data turns out to differ from last time — the very same elements
+   * from before can still be sitting there otherwise. */
+  function setStatsLoading(loading) {
+    grid.querySelectorAll(".stat-spinner").forEach((el) => {
+      el.hidden = !loading;
+    });
   }
 
   // Last known "new orders" badge count. In this app's order lifecycle,
@@ -32,19 +46,38 @@ window.AdminStats = (() => {
   // moves an order into or out of NEW status, so it always shifts this
   // count by exactly ±1. That makes it a reliable (if not airtight —
   // two opposite mutations landing in the very same poll tick would net
-  // to zero) signal for "did anything actually change" — used below to
-  // skip re-fetching a full list or summary the background poll would
-  // otherwise re-request every 15 seconds even when nothing moved.
+  // to zero) signal for "did anything actually change" — and its SIGN
+  // (see noteNewOrdersCount below) further says what kind of change it
+  // was, which is what lets the background poll skip re-fetching a full
+  // list or summary it already knows can't have moved, rather than
+  // blindly re-requesting one every 15 seconds any time the count so
+  // much as twitches.
   let lastKnownNewOrders = null;
 
+  /** Records the latest "new orders" count and reports how it moved
+   *  since the last time either this or refresh() checked it — 0 for no
+   *  change, a positive number if it went up (an order arrived or was
+   *  reopened into NEW), a negative number if it went down (an order
+   *  left NEW for DELIVERED or CANCELLED). The sign is what lets the
+   *  background poll (admin-main.js) tell a brand-new order — which
+   *  can only ever add to the New/All views and never touches Delivered,
+   *  Cancelled, or the Sales money totals (only DELIVERED orders count
+   *  toward those) — apart from an order leaving NEW, which can affect
+   *  any of those and so still needs a real refetch. */
   function noteNewOrdersCount(newOrders) {
-    const changed = lastKnownNewOrders !== null && lastKnownNewOrders !== newOrders;
+    const previous = lastKnownNewOrders;
     lastKnownNewOrders = newOrders;
-    return changed;
+    return previous === null ? 0 : newOrders - previous;
   }
 
   async function refresh() {
     const firstLoad = lastSnapshot === null;
+    // Shown for the whole request, whichever of the three refresh
+    // triggers caused it (direct call after an order action, the
+    // background poll, or switching into this tab) — and always
+    // hidden again in the finally below, success or failure, so it can
+    // never get stuck showing.
+    setStatsLoading(true);
     try {
       const s = await Api.get("/api/admin/orders/summary");
       const snapshot = JSON.stringify(s);
@@ -64,6 +97,8 @@ window.AdminStats = (() => {
       if (firstLoad) {
         grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><p>${Utils.escapeHtml(err.message)}</p></div>`;
       }
+    } finally {
+      setStatsLoading(false);
     }
   }
 
@@ -85,8 +120,24 @@ window.AdminStats = (() => {
       // a background badge poll failing silently is fine — the next tick
       // will just try again, and whatever count is already showing stays
       // put rather than being replaced with an error.
-      return false;
+      return 0;
     }
+  }
+
+  /** Adjusts the "new orders" badge by a known, exact delta (±1) without
+   *  asking the server — safe because this app's order lifecycle only has
+   *  three statuses (NEW/DELIVERED/CANCELLED), so any single delivered/
+   *  cancelled/reopen action always moves an order into or out of NEW
+   *  status by exactly this much, and the caller only calls this once the
+   *  server has already confirmed the action succeeded (the PATCH
+   *  response came back). Falls back to doing nothing if the badge
+   *  hasn't loaded a real count yet — the next real fetch will establish
+   *  the true value instead of guessing from an unknown base. */
+  function adjustNewOrdersCount(delta) {
+    if (lastKnownNewOrders === null) return;
+    lastKnownNewOrders = Math.max(0, lastKnownNewOrders + delta);
+    pill.hidden = lastKnownNewOrders === 0;
+    pill.textContent = lastKnownNewOrders;
   }
 
   // The real <input type="date"> is fully invisible (see admin-sales.css)
@@ -473,5 +524,5 @@ window.AdminStats = (() => {
   exportAllBtn.addEventListener("click", () => exportOrders(false));
   importFile.addEventListener("change", importOrders);
 
-  return { refresh, refreshBadge };
+  return { refresh, refreshBadge, adjustNewOrdersCount };
 })();
