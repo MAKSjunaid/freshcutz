@@ -14,6 +14,24 @@ window.AdminOrders = (() => {
 
   const badgeClass = { NEW: "badge-new", DELIVERED: "badge-delivered", CANCELLED: "badge-cancelled" };
 
+  // Marking an order delivered/cancelled/reopened changes what the Sales
+  // tab's summary cards and "new orders" badge should show — but nothing
+  // here used to tell that tab, so it kept showing whatever it last
+  // fetched until the next 15-second background poll happened to notice,
+  // or until switching tabs kicked off a fresh (but not instant) fetch,
+  // leaving stale numbers on screen in the meantime. refreshStatsSoon()
+  // below fixes that at the source: called right after such an action
+  // succeeds, it asks AdminStats to refresh in the background (whether
+  // or not the Sales tab is even the one currently open), so by the time
+  // anyone looks at it, it's already correct.
+  //
+  // Debounced rather than called directly: clearing out several orders
+  // in a quick burst would otherwise fire one /api/admin/orders/summary
+  // request per click, when only the state after the LAST one in the
+  // burst actually matters — this waits a moment after the most recent
+  // action before asking, coalescing a burst into a single request.
+  const refreshStatsSoon = Utils.debounce(() => window.AdminStats?.refresh(), 400);
+
   function itemsSummary(order) {
     return order.items
       .map((i) => `<div>${i.quantity} × ${Utils.escapeHtml(i.productName)} (${Utils.escapeHtml(i.variantLabel)}) — ${Utils.formatMoney(i.lineTotal)}</div>`)
@@ -127,6 +145,7 @@ window.AdminOrders = (() => {
         "success"
       );
       refresh();
+      refreshStatsSoon();
     } catch (err) {
       Toast.show(err.message, "error");
       actionBtn.disabled = false;
