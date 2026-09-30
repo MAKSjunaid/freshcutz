@@ -4,6 +4,7 @@ import com.freshcutz.dto.ProductRequest;
 import com.freshcutz.dto.ProductResponse;
 import com.freshcutz.exception.BadRequestException;
 import com.freshcutz.service.ProductService;
+import com.freshcutz.service.SseBroadcastService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -23,9 +24,11 @@ public class AdminProductController {
             Set.of("image/jpeg", "image/png", "image/webp", "image/jpg");
 
     private final ProductService productService;
+    private final SseBroadcastService broadcastService;
 
-    public AdminProductController(ProductService productService) {
+    public AdminProductController(ProductService productService, SseBroadcastService broadcastService) {
         this.productService = productService;
+        this.broadcastService = broadcastService;
     }
 
     @GetMapping
@@ -36,24 +39,32 @@ public class AdminProductController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ProductResponse create(@Valid @RequestBody ProductRequest request) {
-        return productService.create(request);
+        ProductResponse response = productService.create(request);
+        broadcastCatalog();
+        return response;
     }
 
     @PutMapping("/{id}")
     public ProductResponse update(@PathVariable Long id, @Valid @RequestBody ProductRequest request) {
-        return productService.update(id, request);
+        ProductResponse response = productService.update(id, request);
+        broadcastCatalog();
+        return response;
     }
 
     @PatchMapping("/{id}/enabled")
     public ProductResponse setEnabled(@PathVariable Long id, @RequestBody Map<String, Boolean> body) {
         boolean enabled = Boolean.TRUE.equals(body.get("enabled"));
-        return productService.setEnabled(id, enabled);
+        ProductResponse response = productService.setEnabled(id, enabled);
+        broadcastCatalog();
+        return response;
     }
 
     @PatchMapping("/{id}/out-of-stock")
     public ProductResponse setOutOfStock(@PathVariable Long id, @RequestBody Map<String, Boolean> body) {
         boolean outOfStock = Boolean.TRUE.equals(body.get("outOfStock"));
-        return productService.setOutOfStock(id, outOfStock);
+        ProductResponse response = productService.setOutOfStock(id, outOfStock);
+        broadcastCatalog();
+        return response;
     }
 
     @PostMapping(value = "/{id}/image", consumes = "multipart/form-data")
@@ -71,7 +82,9 @@ public class AdminProductController {
             // never inserting a separate file/record, which is what kept
             // the old disk-based version quietly filling up with orphaned
             // files every time a photo was changed.
-            return productService.updateImage(id, file.getBytes(), contentType);
+            ProductResponse response = productService.updateImage(id, file.getBytes(), contentType);
+            broadcastCatalog();
+            return response;
         } catch (IOException e) {
             throw new BadRequestException("Could not read the uploaded image: " + e.getMessage());
         }
@@ -81,5 +94,16 @@ public class AdminProductController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
         productService.delete(id);
+        broadcastCatalog();
+    }
+
+    /** Pushes the current customer-facing catalog to every storefront tab
+     * subscribed to /api/products/stream. Called after every mutation
+     * above — reposition() inside ProductService.create()/update() can
+     * also shift OTHER products' displayOrder, so this always re-reads
+     * the full list rather than trying to patch just the one product
+     * that was directly touched. */
+    private void broadcastCatalog() {
+        broadcastService.broadcastProducts(productService.listForCustomers());
     }
 }
