@@ -3,6 +3,7 @@ package com.freshcutz.controller;
 import com.freshcutz.dto.ProductResponse;
 import com.freshcutz.entity.Product;
 import com.freshcutz.service.ProductService;
+import com.freshcutz.service.SseBroadcastService;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -20,14 +22,27 @@ import java.util.concurrent.TimeUnit;
 public class ProductController {
 
     private final ProductService productService;
+    private final SseBroadcastService broadcastService;
 
-    public ProductController(ProductService productService) {
+    public ProductController(ProductService productService, SseBroadcastService broadcastService) {
         this.productService = productService;
+        this.broadcastService = broadcastService;
     }
 
     @GetMapping
     public List<ProductResponse> list() {
         return productService.listForCustomers();
+    }
+
+    /** Replaces the storefront's old 15-second poll of the endpoint above:
+     * the browser opens this once and gets pushed a fresh catalog
+     * whenever an admin actually changes something (see
+     * AdminProductController), instead of asking again on a timer. The
+     * current catalog is sent immediately on connecting, same as the
+     * plain GET above would return. */
+    @GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream() {
+        return broadcastService.subscribeProducts(productService.listForCustomers());
     }
 
     /** Streams a product's photo straight out of the database. The URL
