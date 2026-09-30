@@ -24,6 +24,25 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Sits right beside each card's own label ("Today", "Last 7 days", …) —
+   shown only while a summary fetch is in flight (admin-stats.js's
+   refresh()), so there's a visible sign that specific card's number
+   might be about to change instead of silently sitting there stale for
+   however long that fetch takes. Sized down from the base .spinner
+   (built for buttons) to fit next to this small uppercase label text.
+   .spinner-dark is the same gold-on-cream spin already used elsewhere
+   in the admin panel (the day-orders loading rows) — kept here for the
+   same reason: one consistent "this is loading" look everywhere. */
+.stat-spinner {
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+  flex-shrink: 0;
 }
 
 .stat-card .value {

@@ -9,28 +9,14 @@ window.AdminOrders = (() => {
   let lastSnapshot = null; // last rendered orders, as JSON — lets refresh() skip
   // re-rendering (and re-playing every card's entrance animation) when a
   // background poll finds nothing has actually changed.
+  let currentOrders = []; // the orders currently on screen (parsed, not JSON) —
+  // kept in sync with lastSnapshot so a delivered/cancelled/reopen action
+  // can be reflected locally (see applyLocalStatusChange) without waiting
+  // on a full re-fetch of this same list.
 
   const REOPEN_WINDOW_MS = 24 * 60 * 60 * 1000; // "Reopen as New" only within 24h of order placed
 
   const badgeClass = { NEW: "badge-new", DELIVERED: "badge-delivered", CANCELLED: "badge-cancelled" };
-
-  // Marking an order delivered/cancelled/reopened changes what the Sales
-  // tab's summary cards and "new orders" badge should show — but nothing
-  // here used to tell that tab, so it kept showing whatever it last
-  // fetched until the next 15-second background poll happened to notice,
-  // or until switching tabs kicked off a fresh (but not instant) fetch,
-  // leaving stale numbers on screen in the meantime. refreshStatsSoon()
-  // below fixes that at the source: called right after such an action
-  // succeeds, it asks AdminStats to refresh in the background (whether
-  // or not the Sales tab is even the one currently open), so by the time
-  // anyone looks at it, it's already correct.
-  //
-  // Debounced rather than called directly: clearing out several orders
-  // in a quick burst would otherwise fire one /api/admin/orders/summary
-  // request per click, when only the state after the LAST one in the
-  // burst actually matters — this waits a moment after the most recent
-  // action before asking, coalescing a burst into a single request.
-  const refreshStatsSoon = Utils.debounce(() => window.AdminStats?.refresh(), 400);
 
   function itemsSummary(order) {
     return order.items
@@ -96,13 +82,19 @@ window.AdminOrders = (() => {
       const snapshot = JSON.stringify(orders);
       if (snapshot === lastSnapshot) return; // nothing changed — don't touch the DOM
       lastSnapshot = snapshot;
+      currentOrders = orders;
       list.innerHTML = orders.length
         ? orders.map(card).join("")
         : `<div class="empty-state"><div class="icon">📭</div><p>${searchTerm ? "No orders match your search." : "No orders here yet."}</p></div>`;
-      // The order list just changed — the Orders-tab badge count may
-      // have too, but nothing here needs the full Sales summary (today/
-      // week/month/all-time), so keep this to the one cheap badge query.
-      window.AdminStats?.refreshBadge();
+      // No badge refresh here on purpose. refresh() only ever runs for
+      // reasons that can't move the "new orders" count by themselves —
+      // switching filter tabs, searching, the initial load, or a poll-
+      // triggered refresh (whose caller, admin-main.js's pollTick, has
+      // already just fetched the badge itself to decide whether to call
+      // this at all). A delivered/cancelled/reopen action — the one
+      // thing that DOES move the count — never reaches this function
+      // anymore; it updates the badge directly via adjustNewOrdersCount
+      // (see the click handler below).
     } catch (err) {
       if (firstLoadForThisFilter) {
         list.innerHTML = `<div class="empty-state"><p>${Utils.escapeHtml(err.message)}</p></div>`;
@@ -139,18 +131,66 @@ window.AdminOrders = (() => {
     const action = actionBtn.dataset.action;
     actionBtn.disabled = true;
     try {
-      await Api.patch(`/api/admin/orders/${id}/${action}`);
+      // The PATCH endpoints already return the full updated order — use
+      // that directly instead of re-fetching this whole filtered list
+      // (or the Orders badge) from scratch for a change we already know
+      // the exact outcome of.
+      const updated = await Api.patch(`/api/admin/orders/${id}/${action}`);
       Toast.show(
         action === "delivered" ? "Marked as delivered" : action === "cancelled" ? "Order cancelled" : "Order reopened",
         "success"
       );
-      refresh();
-      refreshStatsSoon();
+      // Every action here moves an order into or out of NEW status by
+      // exactly one, so the badge can be adjusted locally too — no
+      // AdminStats call here otherwise on purpose: the Sales tab's own
+      // visit (switchTo("stats") in admin-main.js) already re-fetches on
+      // its own the moment anyone actually opens that tab.
+      window.AdminStats?.adjustNewOrdersCount(action === "reopen" ? 1 : -1);
+      applyLocalStatusChange(Number(id), updated, card);
     } catch (err) {
       Toast.show(err.message, "error");
       actionBtn.disabled = false;
     }
   });
 
-  return { refresh };
+  /** Reflects a delivered/cancelled/reopen action locally instead of
+   *  re-fetching the whole filtered order list from the server for a
+   *  change we already know the exact outcome of (the PATCH above
+   *  already returned the updated order). Whichever status filter is
+   *  active decides what "reflecting it" means:
+   *   - a specific status tab (New/Delivered/Cancelled): the order no
+   *     longer belongs there — actionsFor() only ever offers an action
+   *     that moves an order OUT of its current status, so this is
+   *     always a removal, never a case of staying but changing.
+   *   - the All tab: the order stays in view either way, so its card is
+   *     swapped in place for one built from the updated order.
+   *  Keeps currentOrders/lastSnapshot in sync too, so a background poll
+   *  shortly after doesn't see a mismatch against what's already
+   *  correctly on screen and force an unnecessary full re-render. */
+  function applyLocalStatusChange(id, updated, cardEl) {
+    const index = currentOrders.findIndex((o) => o.id === id);
+    if (activeStatus === "") {
+      if (index !== -1) currentOrders[index] = updated;
+      cardEl.outerHTML = card(updated);
+    } else {
+      if (index !== -1) currentOrders.splice(index, 1);
+      cardEl.remove();
+      if (!list.children.length) {
+        list.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>${searchTerm ? "No orders match your search." : "No orders here yet."}</p></div>`;
+      }
+    }
+    lastSnapshot = JSON.stringify(currentOrders);
+  }
+
+  /** Whether the currently active filter is one a brand-new incoming
+   *  order (always status NEW) could ever show up in — the New tab
+   *  itself, or All. Lets the background poll (admin-main.js) skip
+   *  re-fetching this list on a pure "new order arrived" badge increase
+   *  when it's sitting on Delivered or Cancelled, since neither of
+   *  those can ever gain an order that's still NEW. */
+  function affectedByNewOrder() {
+    return activeStatus === "" || activeStatus === "NEW";
+  }
+
+  return { refresh, affectedByNewOrder };
 })();
