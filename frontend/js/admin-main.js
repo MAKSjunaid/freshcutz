@@ -34,15 +34,36 @@
   async function pollTick() {
     // Keeps the Orders-tab badge live no matter which tab is open — one
     // small COUNT(*), not the full dashboard summary. It also reports
-    // back whether the "new orders" count actually moved since the last
-    // tick, which (see admin-stats.js's noteNewOrdersCount) reliably
-    // means "did anything about the order set change at all" — so if it
-    // didn't, there's nothing for a full re-fetch to pick up and it's
-    // skipped entirely, whichever tab is open.
-    const changed = await window.AdminStats?.refreshBadge();
-    if (!changed) return;
-    if (currentView === "orders") window.AdminOrders?.refresh();
-    if (currentView === "stats") window.AdminStats?.refresh();
+    // back HOW the "new orders" count moved since the last tick (see
+    // admin-stats.js's noteNewOrdersCount): 0 means nothing changed
+    // anywhere, so there's nothing for a full re-fetch to pick up and
+    // it's skipped entirely. A nonzero delta means something did, but
+    // its sign says what kind of something, which decides how much of
+    // a refetch is actually warranted:
+    //  - delta > 0: an order arrived or was reopened into NEW status.
+    //    Either way the only views that can ever show it are the New
+    //    and All filters (see AdminOrders.affectedByNewOrder) — it can
+    //    never be sitting on Delivered or Cancelled, and it can't touch
+    //    the Sales tab's money totals either, since those only ever
+    //    count DELIVERED orders and a NEW order isn't one yet.
+    //  - delta < 0: an order left NEW for DELIVERED or CANCELLED. Which
+    //    of the two isn't knowable from the count alone, and either one
+    //    can change what Orders (any filter) or Sales money totals show
+    //    — a delivery adds to the money totals, a cancellation can
+    //    still remove the order from whatever list currently has it —
+    //    so this case keeps the previous, unconditional refetch.
+    // (This poll only ever needs to catch a change made from another
+    // admin session/device — this session's own delivered/cancelled/
+    // reopen actions already update themselves locally; see
+    // admin-orders.js's applyLocalStatusChange and adjustNewOrdersCount.)
+    const delta = await window.AdminStats?.refreshBadge();
+    if (!delta) return;
+    if (currentView === "orders" && (delta < 0 || window.AdminOrders?.affectedByNewOrder?.())) {
+      window.AdminOrders?.refresh();
+    }
+    if (currentView === "stats" && delta < 0) {
+      window.AdminStats?.refresh();
+    }
   }
 
   function startPolling() {
