@@ -4,6 +4,19 @@ window.AdminProducts = (() => {
   const list = document.getElementById("productsList");
   const sheetRoot = document.getElementById("sheetRoot");
   let products = [];
+  // Whether the catalog has been fetched at least once this login session.
+  // Unlike Orders, nothing outside this admin's own actions normally
+  // changes the product catalog, and every one of those actions (toggle,
+  // toggle-stock, delete, photo upload) already updates `products` and the
+  // DOM locally below — so once loaded, a plain tab visit never needs to
+  // ask the server again. Reset on logout so a later login always starts
+  // from a real fetch rather than carrying over a stale/empty catalog
+  // from whoever was signed in before (this is a single-page app — logout
+  // doesn't reload the page).
+  let loaded = false;
+  document.addEventListener("freshcutz:logout", () => {
+    loaded = false;
+  });
 
   function priceLine(p) {
     const v1 = `${Utils.escapeHtml(p.variant1Label)}: ${Utils.formatMoney(p.variant1Price)}`;
@@ -50,10 +63,17 @@ window.AdminProducts = (() => {
     </div>`;
   }
 
-  async function refresh() {
+  async function refresh(force = false) {
+    // force=true is only used right after Save (see saveBtn's click
+    // handler): saving can silently reposition every OTHER product's
+    // displayOrder too (see reposition() in ProductService), in a way
+    // only the server knows the full result of, so that one case still
+    // needs a real re-fetch to get the list back in the right order.
+    if (loaded && !force) return;
     list.innerHTML = `<div class="skeleton" style="height:96px;margin-bottom:12px;"></div>`.repeat(3);
     try {
       products = await Api.get("/api/admin/products");
+      loaded = true;
       list.innerHTML = products.length
         ? products.map(card).join("")
         : `<div class="empty-state"><div class="icon">🍗</div><p>No products yet — tap + to add your first one.</p></div>`;
@@ -114,9 +134,15 @@ window.AdminProducts = (() => {
       const formData = new FormData();
       formData.append("file", file);
       try {
-        await Api.upload(`/api/admin/products/${id}/image`, formData);
+        const updated = await Api.upload(`/api/admin/products/${id}/image`, formData);
         Toast.show("Photo updated", "success");
-        refresh();
+        // Only this one product's image changed — nothing else in the
+        // catalog moved, and the response's imageUrl already carries a
+        // fresh cache-buster (?v=<updatedAt>, see ProductResponse), so
+        // swapping this card's <img> src straight from it shows the new
+        // photo immediately without re-fetching the whole list.
+        product.imageUrl = updated.imageUrl;
+        card.querySelector(".admin-product-thumb img").src = Utils.resolveImageUrl(updated.imageUrl);
       } catch (err) {
         Toast.show(err.message, "error");
       }
@@ -128,7 +154,15 @@ window.AdminProducts = (() => {
     try {
       await Api.del(`/api/admin/products/${product.id}`);
       Toast.show("Product deleted", "success");
-      refresh();
+      // Deleting doesn't reposition anything else (ProductService.delete
+      // just removes the row, no reindexing) — so the rest of the list
+      // is still exactly right as-is; just drop this one card locally
+      // instead of re-fetching the whole catalog for it.
+      products = products.filter((p) => p.id !== product.id);
+      list.querySelector(`.admin-product-card[data-id="${product.id}"]`)?.remove();
+      if (!products.length) {
+        list.innerHTML = `<div class="empty-state"><div class="icon">🍗</div><p>No products yet — tap + to add your first one.</p></div>`;
+      }
     } catch (err) {
       Toast.show(err.message, "error");
     }
@@ -241,7 +275,7 @@ window.AdminProducts = (() => {
         }
         Toast.show("Product saved", "success");
         close();
-        refresh();
+        refresh(true);
       } catch (err) {
         Toast.show(err.message, "error");
         saveBtn.disabled = false;
