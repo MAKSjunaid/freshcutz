@@ -301,10 +301,19 @@ window.AdminOrders = (() => {
       );
       // Every action here moves an order into or out of NEW status by
       // exactly one, so the badge can be adjusted locally too — no
-      // AdminStats call here otherwise on purpose: the Sales tab's own
-      // visit (switchTo("stats") in admin-main.js) already re-fetches on
-      // its own the moment anyone actually opens that tab.
+      // AdminStats refresh() call here otherwise on purpose: the Sales
+      // tab's own visit (switchTo("stats") in admin-main.js) already
+      // re-fetches its rolling-window cards the moment anyone actually
+      // opens that tab.
       window.AdminStats?.adjustNewOrdersCount(action === "reopen" ? 1 : -1);
+      // Delivered/Cancelled/Reopen can all change which orders belong to
+      // a day's DELIVERED bucket on the Sales tab (marking delivered adds
+      // one, reopening a delivered order removes one) — if that day was
+      // already expanded there earlier in this session, its cached order
+      // list would otherwise keep showing the old, now-stale set even
+      // though a fresh Apply's totals are already correct (see
+      // admin-stats.js's invalidateDayOrdersCache for the full story).
+      window.AdminStats?.invalidateDayOrdersCache();
       applyLocalStatusChange(Number(id), updated, card);
     } catch (err) {
       Toast.show(err.message, "error");
