@@ -26,8 +26,8 @@ window.AdminOrders = (() => {
   let currentOrders = []; // every order loaded so far across all pages —
   // kept in sync so a delivered/cancelled/reopen action can be reflected
   // locally (see applyLocalStatusChange) without a server round trip.
-  let lastCursor = null; // { createdAt, id } of the last order from the
-  // most recent real fetch (refresh or loadMore) — the seek cursor
+  let lastCursor = null; // { statusUpdatedAt, id } of the last order from
+  // the most recent real fetch (refresh or loadMore) — the seek cursor
   // loadMore() sends for the next page instead of a page number (see
   // queryFor). Deliberately separate from currentOrders, same reasoning
   // as firstPageSnapshot above: applyLocalStatusChange can remove the
@@ -40,7 +40,7 @@ window.AdminOrders = (() => {
   let loadingMore = false;
   let scrollObserver = null;
 
-  const REOPEN_WINDOW_MS = 24 * 60 * 60 * 1000; // "Reopen as New" only within 24h of order placed
+  const REOPEN_WINDOW_MS = 24 * 60 * 60 * 1000; // "Reopen as New" only within 24h of being marked Delivered/Cancelled
 
   const badgeClass = { NEW: "badge-new", DELIVERED: "badge-delivered", CANCELLED: "badge-cancelled" };
 
@@ -56,7 +56,8 @@ window.AdminOrders = (() => {
         <button class="btn btn-gold btn-sm" data-action="delivered">✓ Mark Delivered</button>
         <button class="btn btn-ghost btn-sm" data-action="cancelled">Cancel Order</button>`;
     }
-    const age = Date.now() - new Date(order.createdAt).getTime();
+    const actionedAt = order.statusUpdatedAt || order.createdAt;
+    const age = Date.now() - new Date(actionedAt).getTime();
     if (age > REOPEN_WINDOW_MS) return "";
     return `<button class="btn btn-ghost btn-sm" data-action="reopen">↺ Reopen as New</button>`;
   }
@@ -67,7 +68,8 @@ window.AdminOrders = (() => {
       <div class="order-card-head">
         <div>
           <div class="order-code-lbl">${Utils.escapeHtml(order.orderCode)}</div>
-          <div class="order-time">${Utils.formatDateTime(order.createdAt)}</div>
+          <div class="order-time">Placed: ${Utils.formatDateTime(order.createdAt)}</div>
+          ${order.status !== "NEW" && order.statusUpdatedAt ? `<div class="order-time">${order.status === "DELIVERED" ? "Delivered" : "Cancelled"}: ${Utils.formatDateTime(order.statusUpdatedAt)}</div>` : ""}
         </div>
         <span class="badge ${badgeClass[order.status] || ""}">${order.status}</span>
       </div>
@@ -110,10 +112,14 @@ window.AdminOrders = (() => {
    * asked for (see OrderService.listPaged — New orders are few enough
    * that paging them isn't worth a second query), so sending them there
    * would just be misleading noise in the request with no effect on the
-   * response. No "page" param at all anymore — cursorCreatedAt/cursorId
-   * (the last order's own createdAt/id) replace it, so the database
-   * never has to walk past and discard rows just to find where the next
-   * page starts (see OrderRepository.findByStatusAfterCursor). */
+   * response. No "page" param at all anymore — cursorStatusUpdatedAt/
+   * cursorId (the last order's own statusUpdatedAt/id) replace it, so the
+   * database never has to walk past and discard rows just to find where
+   * the next page starts (see OrderRepository.findOrdersWithItemsOneTrip).
+   * Keyed on statusUpdatedAt (when an order last changed status) rather
+   * than createdAt (when it was placed), so Delivered/Cancelled/All page
+   * through in the same "most recently actioned first" order they're
+   * displayed in. */
   function queryFor(cursor) {
     const params = new URLSearchParams();
     if (activeStatus) params.set("status", activeStatus);
@@ -121,7 +127,7 @@ window.AdminOrders = (() => {
     if (activeStatus !== "NEW") {
       params.set("size", String(PAGE_SIZE));
       if (cursor) {
-        params.set("cursorCreatedAt", cursor.createdAt);
+        params.set("cursorStatusUpdatedAt", cursor.statusUpdatedAt);
         params.set("cursorId", String(cursor.id));
       }
     }
@@ -158,7 +164,7 @@ window.AdminOrders = (() => {
   function cursorFrom(orders) {
     if (!orders.length) return null;
     const last = orders[orders.length - 1];
-    return { createdAt: last.createdAt, id: last.id };
+    return { statusUpdatedAt: last.statusUpdatedAt, id: last.id };
   }
 
   async function refresh() {
