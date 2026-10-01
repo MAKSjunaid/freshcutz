@@ -376,6 +376,25 @@ window.AdminStats = (() => {
     dayOrdersCache.set(date, html);
   }
 
+  /** Drops every cached "day expanded" order list (and individual order
+   *  detail), so the next tap re-fetches from the server instead of
+   *  showing a stale list. Needed because marking an order Delivered/
+   *  Cancelled/Reopened from the Orders tab can change which orders
+   *  belong to a given day's DELIVERED bucket here on the Sales tab —
+   *  without this, a day already expanded once in this session would
+   *  keep showing its old (now-stale) order list even after a fresh
+   *  Apply correctly recomputes the day's total/count from the server
+   *  (see admin-orders.js's click handler, which calls this alongside
+   *  adjustNewOrdersCount for the same delivered/cancelled/reopen
+   *  actions). Clearing both caches outright is simpler and just as
+   *  cheap as trying to work out exactly which single day/order was
+   *  affected — either refetches lazily, only once something is
+   *  actually re-expanded/re-tapped. */
+  function invalidateDayOrdersCache() {
+    dayOrdersCache.clear();
+    orderDetailCache.clear();
+  }
+
   // Delegated once on the container rather than per-row, so it keeps
   // working across re-renders (a fresh Apply replaces rangeResult's
   // innerHTML entirely). Tapping anywhere on a row's summary toggles just
@@ -536,5 +555,5 @@ window.AdminStats = (() => {
   exportAllBtn.addEventListener("click", () => exportOrders(false));
   importFile.addEventListener("change", importOrders);
 
-  return { refresh, refreshBadge, adjustNewOrdersCount, setNewOrdersCount };
+  return { refresh, refreshBadge, adjustNewOrdersCount, setNewOrdersCount, invalidateDayOrdersCache };
 })();
