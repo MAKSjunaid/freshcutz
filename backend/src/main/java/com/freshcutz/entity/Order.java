@@ -19,7 +19,20 @@ import java.util.List;
  */
 @Entity
 @Table(name = "orders", indexes = {
-        @Index(name = "idx_orders_status_delivered_at", columnList = "status, delivered_at")
+        @Index(name = "idx_orders_status_delivered_at", columnList = "status, delivered_at"),
+        // Backs every Orders-tab list query added by this session's
+        // pagination/infinite-scroll work: all of them filter by status
+        // (New/Delivered/Cancelled) and sort by createdAt DESC, or just
+        // sort by createdAt DESC with no filter (the All tab). Without
+        // these, every one of those queries — at every page, not just
+        // deep ones — falls back to a full sequential scan + in-memory
+        // sort of the whole orders table on every single request, which
+        // only gets worse as the table grows. A standard ascending btree
+        // index like this is still used efficiently for DESC ordering
+        // (Postgres can scan it backward), so there's no need for a
+        // separate descending-specific index.
+        @Index(name = "idx_orders_status_created_at", columnList = "status, created_at"),
+        @Index(name = "idx_orders_created_at", columnList = "created_at")
 })
 @Getter
 @Setter
