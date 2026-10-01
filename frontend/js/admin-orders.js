@@ -289,6 +289,19 @@ window.AdminOrders = (() => {
     const id = card.dataset.id;
     const action = actionBtn.dataset.action;
     actionBtn.disabled = true;
+
+    // Flash the instant the button is pressed — not after the PATCH comes
+    // back. The admin should see their tap register right away; waiting
+    // for a server round trip first is exactly the "nothing happened for
+    // a moment" feeling that was reported. flashStartedAt lets
+    // applyLocalStatusChange below work out how much of this flash is
+    // still left to play once the request actually resolves, instead of
+    // always tacking on a full extra FLASH_MS of waiting regardless of
+    // how long that took.
+    const flashClass = FLASH_CLASS[action];
+    if (flashClass) card.classList.add("is-flashing", flashClass);
+    const flashStartedAt = Date.now();
+
     try {
       // The PATCH endpoints already return the full updated order — use
       // that directly instead of re-fetching this whole filtered list
@@ -314,12 +327,27 @@ window.AdminOrders = (() => {
       // though a fresh Apply's totals are already correct (see
       // admin-stats.js's invalidateDayOrdersCache for the full story).
       window.AdminStats?.invalidateDayOrdersCache();
-      applyLocalStatusChange(Number(id), updated, card);
+      applyLocalStatusChange(Number(id), updated, card, action, flashStartedAt);
     } catch (err) {
+      // The action didn't actually happen — undo the optimistic flash
+      // rather than leaving the card looking like something succeeded.
+      if (flashClass) card.classList.remove("is-flashing", flashClass);
       Toast.show(err.message, "error");
       actionBtn.disabled = false;
     }
   });
+
+  // Named to match the CSS classes in admin-cards.css (.flash-delivered /
+  // .flash-cancelled / .flash-reopened) and keyed by the exact action
+  // string actionsFor() puts in data-action (also the URL segment PATCHed
+  // above) — "delivered"/"cancelled"/"reopen".
+  const FLASH_CLASS = { delivered: "flash-delivered", cancelled: "flash-cancelled", reopen: "flash-reopened" };
+  // Must match the CSS animations' own durations (orderCardFlash/
+  // orderCardLeave in admin-cards.css) — there's no clean way to read a
+  // running CSS animation's length back out in JS, so these are kept in
+  // sync by hand instead of computed from one shared source.
+  const FLASH_MS = 700;
+  const LEAVE_MS = 420;
 
   /** Reflects a delivered/cancelled/reopen action locally instead of
    *  re-fetching the whole filtered order list from the server for a
@@ -329,9 +357,20 @@ window.AdminOrders = (() => {
    *   - a specific status tab (New/Delivered/Cancelled): the order no
    *     longer belongs there — actionsFor() only ever offers an action
    *     that moves an order OUT of its current status, so this is
-   *     always a removal, never a case of staying but changing.
+   *     always a removal, never a case of staying but changing. The
+   *     flash itself already started back in the click listener above
+   *     (the instant the button was pressed, not after this PATCH
+   *     resolved) — here it's just left to finish out whatever of its
+   *     700ms is still remaining before sliding/fading the card out and
+   *     then actually removing it, so there's always a clear, readable
+   *     confirmation of which action fired before the card leaves, no
+   *     matter how fast or slow the request itself was.
    *   - the All tab: the order stays in view either way, so its card is
-   *     swapped in place for one built from the updated order.
+   *     swapped in place for one built from the updated order — carrying
+   *     a fresh flash onto the new card (outerHTML makes a brand new
+   *     element, so the old one's already-playing flash doesn't come
+   *     along on its own) so that's still visibly confirmed too, just
+   *     without a removal.
    *  Doesn't touch firstPageSnapshot — that's meant to reflect a real
    *  server fetch of page 0, and this is a purely local edit, so it's
    *  deliberately left stale here. The next poll-triggered refresh()
@@ -339,25 +378,40 @@ window.AdminOrders = (() => {
    *  really did change), and resync for real — exactly the same outcome
    *  as if this had been kept in sync by hand, with far less to get
    *  wrong in the meantime. */
-  function applyLocalStatusChange(id, updated, cardEl) {
+  function applyLocalStatusChange(id, updated, cardEl, action, flashStartedAt) {
     const index = currentOrders.findIndex((o) => o.id === id);
+    const flashClass = FLASH_CLASS[action];
+
     if (activeStatus === "") {
       if (index !== -1) currentOrders[index] = updated;
       cardEl.outerHTML = card(updated);
-    } else {
-      if (index !== -1) currentOrders.splice(index, 1);
-      cardEl.remove();
-      if (!currentOrders.length) {
-        // Genuinely more orders exist beyond this page (hasMore) — pull
-        // the next page in rather than claiming "no orders here" when
-        // there plainly are, just not loaded yet. The load-more row is
-        // still sitting in the DOM either way (only the individual order
-        // card above it was removed), so loadMore() has exactly the same
-        // insertion point it always does.
-        if (hasMore) loadMore();
-        else list.innerHTML = emptyStateHtml();
-      }
+      const freshEl = list.querySelector(`.order-card[data-id="${id}"]`);
+      if (freshEl && flashClass) freshEl.classList.add("is-flashing", flashClass);
+      return;
     }
+
+    // Only wait out whatever's left of the flash that already started at
+    // click time — a slow request that already ran past FLASH_MS on its
+    // own shouldn't then also tack on a full extra wait before the card
+    // starts leaving.
+    const flashRemaining = Math.max(0, FLASH_MS - (Date.now() - flashStartedAt));
+    setTimeout(() => {
+      cardEl.classList.add("is-leaving");
+      setTimeout(() => {
+        if (index !== -1) currentOrders.splice(index, 1);
+        cardEl.remove();
+        if (!currentOrders.length) {
+          // Genuinely more orders exist beyond this page (hasMore) — pull
+          // the next page in rather than claiming "no orders here" when
+          // there plainly are, just not loaded yet. The load-more row is
+          // still sitting in the DOM either way (only the individual
+          // order card above it was removed), so loadMore() has exactly
+          // the same insertion point it always does.
+          if (hasMore) loadMore();
+          else list.innerHTML = emptyStateHtml();
+        }
+      }, LEAVE_MS);
+    }, flashRemaining);
   }
 
   /** Whether the currently active filter is one a brand-new incoming
