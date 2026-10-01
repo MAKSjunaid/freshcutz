@@ -17,6 +17,16 @@
 
 (() => {
   let lastProductsSnapshot = null;
+  // Set only while waiting for the very first catalog push of the page's
+  // life (cleared the moment applyProducts() above gets one). The stream
+  // is now the ONLY source for the initial catalog — there's no separate
+  // GET left to surface a "couldn't load" error the way one used to — so
+  // if nothing has arrived after a generous wait, this shows a friendly
+  // message instead of leaving the loading placeholders up forever. The
+  // wait is deliberately long: the backend runs on Render's free tier,
+  // which can take 30-60+ seconds to wake up from a cold start, and that
+  // is completely normal, not a failure.
+  let initialLoadTimer = null;
 
   function visibleIdSet(products, activeCategory) {
     return new Set(
@@ -44,17 +54,23 @@
     if (footer) footer.innerHTML = S.footerHtml(product, S.cardVariant[product.id] || "variant1");
   }
 
-  /** Applies a freshly received products array — from either the initial
-   * push on connecting or a later one after an admin change — the same
-   * way the old poll-and-diff loop did: skip entirely if nothing
-   * changed, patch existing cards in place when the same products are
-   * still visible, otherwise re-render the grid. */
+  /** Applies a freshly received products array — the very first push on
+   * connecting (this is now the ONLY source for the initial catalog; see
+   * connect() below) or a later one after an admin change — the same way
+   * the old poll-and-diff loop did: skip entirely if nothing changed,
+   * patch existing cards in place when the same products are still
+   * visible, otherwise re-render the grid (which correctly covers going
+   * from the empty starting state to a full grid on that first push). */
   function applyProducts(fresh) {
     const S = window.Storefront;
-    if (!S) return; // storefront.js hasn't finished setting up yet — the
-    // page's own initial GET already rendered the first catalog, so
-    // there's nothing lost by skipping this particular push
+    if (!S) return; // storefront.js hasn't finished setting up yet — see
+    // the script-order note by connect() below for why this shouldn't
+    // actually happen, kept only as a defensive no-op
 
+    if (initialLoadTimer) {
+      clearTimeout(initialLoadTimer);
+      initialLoadTimer = null;
+    }
     const snapshot = JSON.stringify(fresh);
     if (snapshot === lastProductsSnapshot) return; // nothing changed
     lastProductsSnapshot = snapshot;
@@ -88,6 +104,19 @@
 
   function connect() {
     if (eventSource) return;
+    // Only the page's very first connection ever needs the load-timeout
+    // fallback above — once lastProductsSnapshot is set, the catalog has
+    // already loaded at least once, so a later reconnect (e.g. the tab
+    // becoming visible again) has nothing to show a "couldn't load"
+    // message for even if it's slow.
+    if (lastProductsSnapshot === null) {
+      initialLoadTimer = setTimeout(() => {
+        initialLoadTimer = null;
+        window.Storefront?.showLoadError(
+          "Having trouble loading the menu — please check your connection or try refreshing."
+        );
+      }, 45000);
+    }
     eventSource = new EventSource(Api.streamUrl("/api/products/stream"));
     eventSource.addEventListener("products", (e) => {
       try {
@@ -104,6 +133,10 @@
     if (eventSource) {
       eventSource.close();
       eventSource = null;
+    }
+    if (initialLoadTimer) {
+      clearTimeout(initialLoadTimer);
+      initialLoadTimer = null;
     }
   }
 
