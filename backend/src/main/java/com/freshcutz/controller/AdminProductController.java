@@ -5,6 +5,7 @@ import com.freshcutz.dto.ProductResponse;
 import com.freshcutz.exception.BadRequestException;
 import com.freshcutz.service.ProductService;
 import com.freshcutz.service.SseBroadcastService;
+import com.freshcutz.util.ProductImageProcessor;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -25,10 +26,13 @@ public class AdminProductController {
 
     private final ProductService productService;
     private final SseBroadcastService broadcastService;
+    private final ProductImageProcessor imageProcessor;
 
-    public AdminProductController(ProductService productService, SseBroadcastService broadcastService) {
+    public AdminProductController(ProductService productService, SseBroadcastService broadcastService,
+                                   ProductImageProcessor imageProcessor) {
         this.productService = productService;
         this.broadcastService = broadcastService;
+        this.imageProcessor = imageProcessor;
     }
 
     @GetMapping
@@ -77,12 +81,16 @@ public class AdminProductController {
             throw new BadRequestException("Only JPG, PNG or WEBP images are allowed");
         }
         try {
-            // Stored directly in the database (Product.imageData) — this
-            // REPLACES whatever bytes were there before on the same row,
+            // Resized/re-compressed before it ever reaches the database —
+            // see ProductImageProcessor's own javadoc for why (a raw phone
+            // photo can be several MB; nothing downstream needs more than
+            // a web-sized JPEG). Stored directly in Product.imageData,
+            // REPLACING whatever bytes were there before on the same row,
             // never inserting a separate file/record, which is what kept
             // the old disk-based version quietly filling up with orphaned
             // files every time a photo was changed.
-            ProductResponse response = productService.updateImage(id, file.getBytes(), contentType);
+            ProductImageProcessor.ProcessedImage processed = imageProcessor.compress(file.getBytes(), contentType);
+            ProductResponse response = productService.updateImage(id, processed.data(), processed.contentType());
             broadcastCatalog();
             return response;
         } catch (IOException e) {
