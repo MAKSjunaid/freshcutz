@@ -124,6 +124,18 @@ window.AdminStats = (() => {
     }
   }
 
+  /** Sets the "new orders" badge from a count the caller already has in
+   *  hand — no API call of its own. Used when the Orders tab's own list
+   *  fetch already told us exactly how many NEW orders there are (its
+   *  default filter), so a separate /summary/new-count round trip for
+   *  the same number right alongside it would be pure duplication (see
+   *  admin-orders.js's refresh()). */
+  function setNewOrdersCount(count) {
+    pill.hidden = count === 0;
+    pill.textContent = count;
+    lastKnownNewOrders = count;
+  }
+
   /** Adjusts the "new orders" badge by a known, exact delta (±1) without
    *  asking the server — safe because this app's order lifecycle only has
    *  three statuses (NEW/DELIVERED/CANCELLED), so any single delivered/
@@ -524,5 +536,5 @@ window.AdminStats = (() => {
   exportAllBtn.addEventListener("click", () => exportOrders(false));
   importFile.addEventListener("change", importOrders);
 
-  return { refresh, refreshBadge, adjustNewOrdersCount };
+  return { refresh, refreshBadge, adjustNewOrdersCount, setNewOrdersCount };
 })();
