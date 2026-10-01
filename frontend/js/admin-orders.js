@@ -78,6 +78,14 @@ window.AdminOrders = (() => {
       // turn up while browsing the Cancelled tab).
       const path = activeStatus ? `/api/admin/orders?status=${activeStatus}` : "/api/admin/orders";
       const fetched = await Api.get(path);
+      // This IS the full set of NEW orders whenever that's the active
+      // filter (status-filtered server-side, not narrowed by the local
+      // search box below) — exactly the number the Orders-tab badge
+      // needs, so hand it over directly instead of letting a separate
+      // /summary/new-count request ask the server for the same count a
+      // second time right alongside this one (most notably right at
+      // login, where New is the default tab).
+      if (activeStatus === "NEW") window.AdminStats?.setNewOrdersCount(fetched.length);
       const orders = searchTerm ? fetched.filter(matchesSearch) : fetched;
       const snapshot = JSON.stringify(orders);
       if (snapshot === lastSnapshot) return; // nothing changed — don't touch the DOM
