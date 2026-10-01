@@ -78,8 +78,20 @@
 
   document.addEventListener("freshcutz:login", () => {
     loggedIn = true;
+    // Orders is the default visible tab, so its list is worth loading
+    // right away — same reasoning for the store toggle below, which
+    // lives in the topbar and is always on screen no matter which tab
+    // is open. The Sales tab's full multi-bucket summary is neither:
+    // it's inside a hidden view the admin hasn't opened yet, so it's
+    // loaded lazily the moment the admin actually switches to Sales
+    // (see switchTo() above), exactly like Products and Customers
+    // already only load once their own tab is opened. No separate
+    // badge fetch here either: Orders' default filter is New, so the
+    // very refresh() below already asks the server for exactly the
+    // NEW orders and hands their count straight to the badge itself
+    // (see admin-orders.js) — a second /summary/new-count request for
+    // the same number right alongside it would just be duplicate work.
     window.AdminOrders?.refresh();
-    window.AdminStats?.refresh();
     window.AdminStore?.refresh();
     startPolling();
   });
