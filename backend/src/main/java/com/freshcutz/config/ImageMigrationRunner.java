@@ -2,6 +2,7 @@ package com.freshcutz.config;
 
 import com.freshcutz.entity.Product;
 import com.freshcutz.repository.ProductRepository;
+import com.freshcutz.util.ProductImageProcessor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -38,11 +39,14 @@ import java.util.Set;
 public class ImageMigrationRunner implements CommandLineRunner {
 
     private final ProductRepository productRepository;
+    private final ProductImageProcessor imageProcessor;
     private final List<Path> candidateDirs;
 
     public ImageMigrationRunner(ProductRepository productRepository,
+                                 ProductImageProcessor imageProcessor,
                                  @Value("${freshcutz.uploads.dir}") String uploadsDir) {
         this.productRepository = productRepository;
+        this.imageProcessor = imageProcessor;
         Path configured = Paths.get(uploadsDir).toAbsolutePath().normalize();
         Set<Path> candidates = new LinkedHashSet<>();
         candidates.add(configured);
@@ -76,8 +80,10 @@ public class ImageMigrationRunner implements CommandLineRunner {
                 continue;
             }
             try {
-                product.setImageData(Files.readAllBytes(file));
-                product.setImageContentType(contentTypeFor(filename));
+                byte[] raw = Files.readAllBytes(file);
+                ProductImageProcessor.ProcessedImage processed = imageProcessor.compress(raw, contentTypeFor(filename));
+                product.setImageData(processed.data());
+                product.setImageContentType(processed.contentType());
                 productRepository.save(product);
                 migrated++;
                 log.info("Migrated photo for product {} ('{}') from {}", product.getId(), product.getName(), file);
