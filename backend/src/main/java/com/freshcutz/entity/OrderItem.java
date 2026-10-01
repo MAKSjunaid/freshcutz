@@ -14,7 +14,17 @@ import java.math.BigDecimal;
  * at order time so historical orders never change if the catalog does.
  */
 @Entity
-@Table(name = "order_items")
+@Table(name = "order_items", indexes = {
+        // Every order's items are looked up by this foreign key — the
+        // New tab's single EntityGraph fetch-join query joins on it, and
+        // All/Delivered/Cancelled's paginated queries batch-load items
+        // with "WHERE order_id IN (...)" (see OrderService.listPaged).
+        // Postgres doesn't index foreign key columns automatically, so
+        // without this, both of those access patterns fall back to a
+        // full sequential scan of order_items on every single Orders-tab
+        // request, regardless of how few orders are actually on the page.
+        @Index(name = "idx_order_items_order_id", columnList = "order_id")
+})
 @Getter
 @Setter
 @NoArgsConstructor
