@@ -17,6 +17,14 @@ RUN mvn -B clean package -DskipTests
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
+# fontconfig: Alpine's base JRE image ships without it, and some JVM
+# internals touched by java.awt/ImageIO (used by ProductImageProcessor to
+# resize and re-compress uploaded product photos) can crash looking for
+# it even for code that never renders any text — a well-known Alpine-JRE
+# gotcha, not specific to this app. Cheap to install up front rather than
+# discover it the first time someone uploads a photo in production.
+RUN apk add --no-cache fontconfig
+
 COPY --from=build /app/target/freshcutz-backend.jar app.jar
 
 # Render sets $PORT at runtime; application.properties already reads it
