@@ -27,6 +27,12 @@ public class OrderResponse {
     private BigDecimal totalAmount;
     private Instant createdAt;
     private Instant deliveredAt;
+    // When this order last changed status — see Order.statusUpdatedAt's
+    // own comment. Used by the admin Orders tab to build the next page's
+    // keyset cursor and to decide whether "Reopen as New" is still within
+    // its 24-hour window, both client-side (see admin-orders.js) mirroring
+    // the same rule OrderService.reopen enforces server-side.
+    private Instant statusUpdatedAt;
     private List<OrderItemResponse> items;
 
     public static OrderResponse from(Order order) {
@@ -43,6 +49,7 @@ public class OrderResponse {
                 .totalAmount(order.getTotalAmount())
                 .createdAt(order.getCreatedAt())
                 .deliveredAt(order.getDeliveredAt())
+                .statusUpdatedAt(order.getStatusUpdatedAt())
                 .items(order.getItems().stream()
                         .map(OrderItemResponse::from)
                         .collect(Collectors.toList()))

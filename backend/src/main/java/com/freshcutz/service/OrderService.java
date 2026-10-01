@@ -152,15 +152,18 @@ public class OrderService {
      * force one query to pull back the whole table anyway, which would
      * defeat the entire point of paging.
      *
-     * cursorCreatedAt/cursorId are both null for the first page (the
+     * cursorStatusUpdatedAt/cursorId are both null for the first page (the
      * Orders tab's refresh()) and both set for every "load more" past it
-     * — they're the createdAt+id of the last order already loaded,
-     * driving keyset ("seek") pagination instead of OFFSET for every
-     * page after the first; see OrderRepository.findByStatusAfterCursor
-     * for why that matters once an admin has scrolled in a few pages. */
+     * — they're the statusUpdatedAt+id of the last order already loaded,
+     * driving keyset ("seek") pagination instead of OFFSET for every page
+     * after the first (see OrderRepository.findOrdersWithItemsOneTrip).
+     * Keyed on statusUpdatedAt rather than createdAt so paging stays
+     * consistent with the Delivered/Cancelled/All tabs' sort order — see
+     * Order.statusUpdatedAt's own comment for why that's the right field
+     * to sort by. */
     @Transactional(readOnly = true)
     public PagedOrdersResponse listPaged(OrderStatus status, String search, int size,
-                                          Instant cursorCreatedAt, Long cursorId) {
+                                          Instant cursorStatusUpdatedAt, Long cursorId) {
         String q = (search == null || search.isBlank()) ? null : search.trim();
 
         // NEW orders don't actually need pagination at all: this shop
@@ -218,11 +221,11 @@ public class OrderService {
         // OrderRepository.findAllOrdersWithItemsOneTrip's javadoc for why
         // that distinction is worth a second query method.
         List<Object[]> rows = (statusParam == null)
-                ? orderRepository.findAllOrdersWithItemsOneTrip(q, cursorCreatedAt, cursorId, pageSize + 1)
-                : orderRepository.findOrdersWithItemsOneTrip(statusParam, q, cursorCreatedAt, cursorId, pageSize + 1);
+                ? orderRepository.findAllOrdersWithItemsOneTrip(q, cursorStatusUpdatedAt, cursorId, pageSize + 1)
+                : orderRepository.findOrdersWithItemsOneTrip(statusParam, q, cursorStatusUpdatedAt, cursorId, pageSize + 1);
         long dbMs = System.currentTimeMillis() - dbStart;
         log.info("listPaged: status={} search={} cursor={} rows={} dbCallMs={}",
-                statusParam, q != null, cursorCreatedAt != null, rows.size(), dbMs);
+                statusParam, q != null, cursorStatusUpdatedAt != null, rows.size(), dbMs);
         boolean hasMore = rows.size() > pageSize;
         List<Object[]> pageRows = hasMore ? rows.subList(0, pageSize) : rows;
 
@@ -245,9 +248,9 @@ public class OrderService {
      * an OrderResponse — column order here must match the SELECT list
      * there exactly (id, orderCode, customerName, phone, flatNo,
      * addressLine, landmark, notes, status, totalAmount, createdAt,
-     * deliveredAt, itemsJson). Built by hand instead of through
-     * OrderResponse.from(Order) because this data never exists as a
-     * managed Order entity — it comes back from a plain aggregated/
+     * deliveredAt, statusUpdatedAt, itemsJson). Built by hand instead of
+     * through OrderResponse.from(Order) because this data never exists as
+     * a managed Order entity — it comes back from a plain aggregated/
      * joined native query, not Hibernate loading an Order. */
     private OrderResponse mapRow(Object[] row) {
         return OrderResponse.builder()
@@ -263,7 +266,8 @@ public class OrderService {
                 .totalAmount(toBigDecimal(row[9]))
                 .createdAt(toInstant(row[10]))
                 .deliveredAt(toInstant(row[11]))
-                .items(parseItems((String) row[12]))
+                .statusUpdatedAt(toInstant(row[12]))
+                .items(parseItems((String) row[13]))
                 .build();
     }
 
@@ -377,8 +381,10 @@ public class OrderService {
     @Transactional
     public OrderResponse markDelivered(Long id) {
         Order order = getEntity(id);
+        Instant now = Instant.now();
         order.setStatus(OrderStatus.DELIVERED);
-        order.setDeliveredAt(Instant.now());
+        order.setDeliveredAt(now);
+        order.setStatusUpdatedAt(now);
         Order saved = orderRepository.save(order);
         pushNotificationService.notifyOrderDelivered(saved);
         return OrderResponse.from(saved);
@@ -388,23 +394,34 @@ public class OrderService {
     public OrderResponse markCancelled(Long id) {
         Order order = getEntity(id);
         order.setStatus(OrderStatus.CANCELLED);
+        order.setStatusUpdatedAt(Instant.now());
         return OrderResponse.from(orderRepository.save(order));
     }
 
-    /** An order can only be reopened within 24 hours of being placed — after
-     * that the admin's "Reopen as New" option is gone (enforced here too, in
-     * case something still calls this endpoint past the UI's own cutoff). */
+    /** An order can only be reopened within 24 hours of being marked
+     * Delivered/Cancelled — after that the admin's "Reopen as New" option
+     * is gone (enforced here too, in case something still calls this
+     * endpoint past the UI's own cutoff). Deliberately measured from
+     * statusUpdatedAt (when it was actioned), not createdAt (when it was
+     * originally placed): an order placed four days ago but only marked
+     * delivered/cancelled just now is still fresh to reopen right now —
+     * it's the action being undone that needs to be recent, not the
+     * order's age. statusUpdatedAt defaults to createdAt for an order
+     * that's never changed status (see Order.onCreate), so this is a
+     * no-op change for any order still sitting in NEW. */
     private static final long REOPEN_WINDOW_HOURS = 24;
 
     @Transactional
     public OrderResponse reopen(Long id) {
         Order order = getEntity(id);
-        Instant cutoff = order.getCreatedAt().plusSeconds(REOPEN_WINDOW_HOURS * 3600);
+        Instant actionedAt = order.getStatusUpdatedAt() != null ? order.getStatusUpdatedAt() : order.getCreatedAt();
+        Instant cutoff = actionedAt.plusSeconds(REOPEN_WINDOW_HOURS * 3600);
         if (Instant.now().isAfter(cutoff)) {
-            throw new BadRequestException("This order is more than 24 hours old and can no longer be reopened.");
+            throw new BadRequestException("This order was marked Delivered/Cancelled more than 24 hours ago and can no longer be reopened.");
         }
         order.setStatus(OrderStatus.NEW);
         order.setDeliveredAt(null);
+        order.setStatusUpdatedAt(Instant.now());
         return OrderResponse.from(orderRepository.save(order));
     }
 

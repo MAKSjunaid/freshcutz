@@ -32,7 +32,13 @@ import java.util.List;
         // (Postgres can scan it backward), so there's no need for a
         // separate descending-specific index.
         @Index(name = "idx_orders_status_created_at", columnList = "status, created_at"),
-        @Index(name = "idx_orders_created_at", columnList = "created_at")
+        @Index(name = "idx_orders_created_at", columnList = "created_at"),
+        // Backs the Delivered/Cancelled/All tabs' sort order, which keys
+        // off statusUpdatedAt (when the order last changed status) rather
+        // than createdAt (when it was first placed) — see statusUpdatedAt's
+        // own comment below for why. Same shape as idx_orders_status_created_at
+        // above, just for the new column.
+        @Index(name = "idx_orders_status_status_updated_at", columnList = "status, status_updated_at")
 })
 @Getter
 @Setter
@@ -80,6 +86,25 @@ public class Order {
     @Column(name = "delivered_at")
     private Instant deliveredAt;
 
+    /** When this order last changed status (placed as NEW, then marked
+     * Delivered/Cancelled, then possibly reopened back to NEW) — distinct
+     * from createdAt, which never changes after the order is placed. The
+     * admin Orders tab's Delivered/Cancelled/All lists sort by this field
+     * (most recently actioned first) instead of createdAt, so an order
+     * placed days ago that's only just now been marked delivered shows up
+     * at the top where the admin is looking, not buried under today's
+     * orders by its original placement date. It also backs the "Reopen as
+     * New" 24-hour window (see OrderService.reopen) — that window is
+     * measured from when the order was marked Delivered/Cancelled, not
+     * from when it was originally placed, so an old order marked delivered
+     * today can still be reopened today.
+     *
+     * Defaults to createdAt for a brand-new order (see onCreate below), so
+     * the New tab — which never reads this column, only createdAt — stays
+     * completely unaffected. */
+    @Column(name = "status_updated_at")
+    private Instant statusUpdatedAt;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<OrderItem> items = new ArrayList<>();
@@ -91,6 +116,9 @@ public class Order {
         }
         if (status == null) {
             status = OrderStatus.NEW;
+        }
+        if (statusUpdatedAt == null) {
+            statusUpdatedAt = createdAt;
         }
     }
 

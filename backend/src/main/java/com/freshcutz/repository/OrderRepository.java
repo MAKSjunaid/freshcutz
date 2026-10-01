@@ -7,6 +7,7 @@ import com.freshcutz.entity.Order;
 import com.freshcutz.entity.OrderStatus;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -82,15 +83,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             "           LOWER(o.order_code) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR " +
             "           LOWER(o.phone) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR " +
             "           LOWER(o.customer_name) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) " +
-            "      AND (CAST(:cursorCreatedAt AS timestamptz) IS NULL OR " +
-            "           o.created_at < CAST(:cursorCreatedAt AS timestamptz) OR " +
-            "           (o.created_at = CAST(:cursorCreatedAt AS timestamptz) AND o.id < CAST(:cursorId AS bigint))) " +
-            "    ORDER BY o.created_at DESC, o.id DESC " +
+            "      AND (CAST(:cursorStatusUpdatedAt AS timestamptz) IS NULL OR " +
+            "           o.status_updated_at < CAST(:cursorStatusUpdatedAt AS timestamptz) OR " +
+            "           (o.status_updated_at = CAST(:cursorStatusUpdatedAt AS timestamptz) AND o.id < CAST(:cursorId AS bigint))) " +
+            "    ORDER BY o.status_updated_at DESC, o.id DESC " +
             "    LIMIT :limit" +
             ") " +
             "SELECT " +
             "    p.id, p.order_code, p.customer_name, p.phone, p.flat_no, p.address_line, " +
             "    p.landmark, p.notes, p.status, p.total_amount, p.created_at, p.delivered_at, " +
+            "    p.status_updated_at, " +
             "    COALESCE(" +
             "        jsonb_agg(" +
             "            jsonb_build_object(" +
@@ -109,12 +111,13 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             "FROM page p " +
             "LEFT JOIN order_items oi ON oi.order_id = p.id " +
             "GROUP BY p.id, p.order_code, p.customer_name, p.phone, p.flat_no, p.address_line, " +
-            "    p.landmark, p.notes, p.status, p.total_amount, p.created_at, p.delivered_at " +
-            "ORDER BY p.created_at DESC, p.id DESC",
+            "    p.landmark, p.notes, p.status, p.total_amount, p.created_at, p.delivered_at, " +
+            "    p.status_updated_at " +
+            "ORDER BY p.status_updated_at DESC, p.id DESC",
             nativeQuery = true)
     List<Object[]> findOrdersWithItemsOneTrip(@Param("status") String status,
                                                @Param("search") String search,
-                                               @Param("cursorCreatedAt") Instant cursorCreatedAt,
+                                               @Param("cursorStatusUpdatedAt") Instant cursorStatusUpdatedAt,
                                                @Param("cursorId") Long cursorId,
                                                @Param("limit") int limit);
 
@@ -136,15 +139,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             "           LOWER(o.order_code) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR " +
             "           LOWER(o.phone) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR " +
             "           LOWER(o.customer_name) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) " +
-            "      AND (CAST(:cursorCreatedAt AS timestamptz) IS NULL OR " +
-            "           o.created_at < CAST(:cursorCreatedAt AS timestamptz) OR " +
-            "           (o.created_at = CAST(:cursorCreatedAt AS timestamptz) AND o.id < CAST(:cursorId AS bigint))) " +
-            "    ORDER BY o.created_at DESC, o.id DESC " +
+            "      AND (CAST(:cursorStatusUpdatedAt AS timestamptz) IS NULL OR " +
+            "           o.status_updated_at < CAST(:cursorStatusUpdatedAt AS timestamptz) OR " +
+            "           (o.status_updated_at = CAST(:cursorStatusUpdatedAt AS timestamptz) AND o.id < CAST(:cursorId AS bigint))) " +
+            "    ORDER BY o.status_updated_at DESC, o.id DESC " +
             "    LIMIT :limit" +
             ") " +
             "SELECT " +
             "    p.id, p.order_code, p.customer_name, p.phone, p.flat_no, p.address_line, " +
             "    p.landmark, p.notes, p.status, p.total_amount, p.created_at, p.delivered_at, " +
+            "    p.status_updated_at, " +
             "    COALESCE(" +
             "        jsonb_agg(" +
             "            jsonb_build_object(" +
@@ -163,11 +167,12 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             "FROM page p " +
             "LEFT JOIN order_items oi ON oi.order_id = p.id " +
             "GROUP BY p.id, p.order_code, p.customer_name, p.phone, p.flat_no, p.address_line, " +
-            "    p.landmark, p.notes, p.status, p.total_amount, p.created_at, p.delivered_at " +
-            "ORDER BY p.created_at DESC, p.id DESC",
+            "    p.landmark, p.notes, p.status, p.total_amount, p.created_at, p.delivered_at, " +
+            "    p.status_updated_at " +
+            "ORDER BY p.status_updated_at DESC, p.id DESC",
             nativeQuery = true)
     List<Object[]> findAllOrdersWithItemsOneTrip(@Param("search") String search,
-                                                  @Param("cursorCreatedAt") Instant cursorCreatedAt,
+                                                  @Param("cursorStatusUpdatedAt") Instant cursorStatusUpdatedAt,
                                                   @Param("cursorId") Long cursorId,
                                                   @Param("limit") int limit);
 
@@ -252,4 +257,23 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<DailyTotalRow> findDailyTotalsBetween(@Param("status") String status,
                                                 @Param("from") Instant from, @Param("to") Instant to,
                                                 @Param("zone") String zone);
+
+    /** One-time backfill for orders that existed before statusUpdatedAt was
+     * introduced — they have NULL there (a brand-new column has no value
+     * for rows that already existed when it was added), which would sort
+     * unpredictably and break the keyset cursor comparisons in
+     * findOrdersWithItemsOneTrip/findAllOrdersWithItemsOneTrip above. Run
+     * once at startup by OrderStatusBackfillRunner; already-delivered
+     * orders get their real deliveredAt (accurate — that's exactly when
+     * they were marked delivered), everything else (NEW or CANCELLED, which
+     * has no separate "when cancelled" column) falls back to createdAt,
+     * matching the sort order they already had before this change. Safe to
+     * run on every startup — the WHERE clause only ever touches rows still
+     * NULL, and every order from here on gets statusUpdatedAt set directly
+     * by Order.onCreate / OrderService, never NULL to begin with. */
+    @Modifying
+    @Query(value = "UPDATE orders SET status_updated_at = COALESCE(delivered_at, created_at) " +
+            "WHERE status_updated_at IS NULL",
+            nativeQuery = true)
+    int backfillMissingStatusUpdatedAt();
 }
