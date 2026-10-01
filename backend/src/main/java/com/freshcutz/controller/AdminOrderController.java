@@ -4,12 +4,14 @@ import com.freshcutz.dto.DailySalesGroup;
 import com.freshcutz.dto.DailySalesRow;
 import com.freshcutz.dto.NewOrdersCountResponse;
 import com.freshcutz.dto.OrderResponse;
+import com.freshcutz.dto.PagedOrdersResponse;
 import com.freshcutz.dto.SalesSummaryResponse;
 import com.freshcutz.entity.OrderStatus;
 import com.freshcutz.service.OrderService;
 import com.freshcutz.service.SalesService;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -26,12 +28,27 @@ public class AdminOrderController {
         this.salesService = salesService;
     }
 
+    /** Paged (default 10 at a time) + optionally search-filtered orders for
+     * the Orders tab's infinite scroll — status omitted/blank means the
+     * "All" tab, same as before. The older unpaged behavior is gone from
+     * this endpoint entirely (nothing else called it, so there's no
+     * compatibility concern) — see OrderService.listPaged for why.
+     *
+     * cursorCreatedAt/cursorId are both omitted for the first page and
+     * both sent (the last order's own createdAt/id) for every "load
+     * more" after that — keyset pagination instead of a page number, so
+     * the database never has to walk past and discard rows just to find
+     * where the next page starts. There's no "page" param anymore: an
+     * OFFSET-based page number is exactly what this replaces. */
     @GetMapping
-    public List<OrderResponse> list(@RequestParam(required = false) String status) {
-        if (status == null || status.isBlank()) {
-            return orderService.listAll();
-        }
-        return orderService.listByStatus(OrderStatus.valueOf(status.toUpperCase()));
+    public PagedOrdersResponse list(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) Instant cursorCreatedAt,
+            @RequestParam(required = false) Long cursorId) {
+        OrderStatus parsedStatus = (status == null || status.isBlank()) ? null : OrderStatus.valueOf(status.toUpperCase());
+        return orderService.listPaged(parsedStatus, search, size, cursorCreatedAt, cursorId);
     }
 
     @GetMapping("/summary")
