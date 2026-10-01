@@ -1,4 +1,13 @@
-/* Orders tab: list + filter by status, mark delivered/cancelled/reopen. */
+/* Orders tab: list + filter by status, mark delivered/cancelled/reopen.
+ *
+ * Fetches 10 orders at a time instead of the whole filtered list, loading
+ * more as the admin scrolls — a status like Delivered or Cancelled only
+ * ever grows over the life of the shop, so asking the database (and
+ * shipping over the network) for every single one of them on every tab
+ * visit gets slower and slower forever. Search is a real server-side
+ * query for the same reason: filtering only what's already been
+ * scrolled into view would silently miss matches further down a list
+ * that's no longer fully loaded client-side. */
 
 window.AdminOrders = (() => {
   const list = document.getElementById("ordersList");
@@ -6,13 +15,30 @@ window.AdminOrders = (() => {
   const searchInput = document.getElementById("orderSearchInput");
   let activeStatus = "NEW"; // default view: keep an eye on new incoming orders
   let searchTerm = "";
-  let lastSnapshot = null; // last rendered orders, as JSON — lets refresh() skip
-  // re-rendering (and re-playing every card's entrance animation) when a
-  // background poll finds nothing has actually changed.
-  let currentOrders = []; // the orders currently on screen (parsed, not JSON) —
-  // kept in sync with lastSnapshot so a delivered/cancelled/reopen action
-  // can be reflected locally (see applyLocalStatusChange) without waiting
-  // on a full re-fetch of this same list.
+  const PAGE_SIZE = 10;
+
+  // JSON of just the most recently fetched PAGE 0 — deliberately not the
+  // whole (possibly many-pages-deep) currentOrders below, so a poll or
+  // tab revisit can correctly tell "page 0 is unchanged, leave everything
+  // as-is" apart from "something really did change, reset to page 0"
+  // regardless of how many further pages have been scrolled in since.
+  let firstPageSnapshot = null;
+  let currentOrders = []; // every order loaded so far across all pages —
+  // kept in sync so a delivered/cancelled/reopen action can be reflected
+  // locally (see applyLocalStatusChange) without a server round trip.
+  let lastCursor = null; // { createdAt, id } of the last order from the
+  // most recent real fetch (refresh or loadMore) — the seek cursor
+  // loadMore() sends for the next page instead of a page number (see
+  // queryFor). Deliberately separate from currentOrders, same reasoning
+  // as firstPageSnapshot above: applyLocalStatusChange can remove the
+  // very order this cursor points at (marking the last-visible order on
+  // a status tab delivered/cancelled removes it from currentOrders), and
+  // this must keep pointing at "the last order the server actually gave
+  // us" regardless, or the next loadMore() would re-fetch orders we
+  // already have (or skip ones we don't).
+  let hasMore = false;
+  let loadingMore = false;
+  let scrollObserver = null;
 
   const REOPEN_WINDOW_MS = 24 * 60 * 60 * 1000; // "Reopen as New" only within 24h of order placed
 
@@ -58,42 +84,117 @@ window.AdminOrders = (() => {
     </div>`;
   }
 
-  function matchesSearch(order) {
-    const q = searchTerm.toLowerCase();
-    return (
-      (order.orderCode || "").toLowerCase().includes(q) ||
-      (order.phone || "").toLowerCase().includes(q) ||
-      (order.customerName || "").toLowerCase().includes(q)
+  function emptyStateHtml() {
+    return `<div class="empty-state"><div class="icon">📭</div><p>${searchTerm ? "No orders match your search." : "No orders here yet."}</p></div>`;
+  }
+
+  function loadMoreRowHtml() {
+    return `<div id="ordersLoadMore" class="orders-load-more">
+      <span class="spinner spinner-dark" hidden></span>
+      <span hidden>Loading more orders…</span>
+    </div>`;
+  }
+
+  function setLoadMoreSpinning(spinning) {
+    const row = document.getElementById("ordersLoadMore");
+    if (!row) return;
+    row.querySelectorAll("span").forEach((el) => {
+      el.hidden = !spinning;
+    });
+  }
+
+  /** (Re)builds the query string for the current status/search — shared
+   * by refresh() (cursor = null, the first page) and loadMore() (cursor
+   * = lastCursor, everything after). Omits size/cursor for the New tab:
+   * the backend returns every NEW order in one go regardless of what's
+   * asked for (see OrderService.listPaged — New orders are few enough
+   * that paging them isn't worth a second query), so sending them there
+   * would just be misleading noise in the request with no effect on the
+   * response. No "page" param at all anymore — cursorCreatedAt/cursorId
+   * (the last order's own createdAt/id) replace it, so the database
+   * never has to walk past and discard rows just to find where the next
+   * page starts (see OrderRepository.findByStatusAfterCursor). */
+  function queryFor(cursor) {
+    const params = new URLSearchParams();
+    if (activeStatus) params.set("status", activeStatus);
+    if (searchTerm) params.set("search", searchTerm);
+    if (activeStatus !== "NEW") {
+      params.set("size", String(PAGE_SIZE));
+      if (cursor) {
+        params.set("cursorCreatedAt", cursor.createdAt);
+        params.set("cursorId", String(cursor.id));
+      }
+    }
+    return `/api/admin/orders?${params.toString()}`;
+  }
+
+  /** Watches the trailing "load more" row — once it scrolls into view
+   * (the admin has reached the bottom of what's loaded so far) and
+   * there's genuinely another page, fetches it. Re-created on every full
+   * refresh() since that replaces the row's DOM node entirely; loadMore()
+   * itself never touches the DOM structure around the row, so the same
+   * observer instance keeps working across however many pages get
+   * appended afterward. */
+  function observeLoadMoreRow() {
+    if (scrollObserver) scrollObserver.disconnect();
+    const row = document.getElementById("ordersLoadMore");
+    if (!row) return;
+    // Same rootMargin trick as the storefront grid's reveal-on-scroll
+    // (see storefront.js): starts loading the next page a bit before the
+    // row is actually scrolled into view, so there's no visible pause at
+    // the bottom waiting for a request to even start.
+    scrollObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMore();
+      },
+      { rootMargin: "0px 0px 200px 0px" }
     );
+    scrollObserver.observe(row);
+  }
+
+  /** The seek cursor pointing just past the last order in this batch —
+   * what the next loadMore() call needs to ask for the following page.
+   * null for an empty batch (nothing to point past). */
+  function cursorFrom(orders) {
+    if (!orders.length) return null;
+    const last = orders[orders.length - 1];
+    return { createdAt: last.createdAt, id: last.id };
   }
 
   async function refresh() {
-    const firstLoadForThisFilter = lastSnapshot === null;
+    const firstLoadForThisFilter = firstPageSnapshot === null;
     if (firstLoadForThisFilter) {
       list.innerHTML = `<div class="skeleton" style="height:140px;margin-bottom:12px;"></div>`.repeat(2);
     }
     try {
-      // Search filters within whatever the status tab is already showing —
-      // it doesn't reach across tabs (an order marked Delivered shouldn't
-      // turn up while browsing the Cancelled tab).
-      const path = activeStatus ? `/api/admin/orders?status=${activeStatus}` : "/api/admin/orders";
-      const fetched = await Api.get(path);
-      // This IS the full set of NEW orders whenever that's the active
-      // filter (status-filtered server-side, not narrowed by the local
-      // search box below) — exactly the number the Orders-tab badge
-      // needs, so hand it over directly instead of letting a separate
-      // /summary/new-count request ask the server for the same count a
-      // second time right alongside this one (most notably right at
-      // login, where New is the default tab).
-      if (activeStatus === "NEW") window.AdminStats?.setNewOrdersCount(fetched.length);
-      const orders = searchTerm ? fetched.filter(matchesSearch) : fetched;
-      const snapshot = JSON.stringify(orders);
-      if (snapshot === lastSnapshot) return; // nothing changed — don't touch the DOM
-      lastSnapshot = snapshot;
-      currentOrders = orders;
-      list.innerHTML = orders.length
-        ? orders.map(card).join("")
-        : `<div class="empty-state"><div class="icon">📭</div><p>${searchTerm ? "No orders match your search." : "No orders here yet."}</p></div>`;
+      const res = await Api.get(queryFor(null));
+      // Only trustworthy as the Orders-tab badge count while NOT
+      // searching — a search narrows totalElements down to just the
+      // matches, which isn't the true "how many new orders" figure the
+      // badge needs. Unsearched, this is exactly that figure (status-
+      // filtered server-side, across every page, not just this one), so
+      // it still saves a separate /summary/new-count request the same
+      // way it did before pagination (most notably right at login, where
+      // New is the default tab).
+      if (activeStatus === "NEW" && !searchTerm) window.AdminStats?.setNewOrdersCount(res.totalElements);
+
+      const snapshot = JSON.stringify(res.orders);
+      if (snapshot === firstPageSnapshot) return; // page 0 is unchanged — leave
+      // everything as-is, including any further pages already scrolled in;
+      // see firstPageSnapshot's own comment up top for why this compares
+      // against just page 0 rather than the full (possibly much longer)
+      // currentOrders.
+      firstPageSnapshot = snapshot;
+      currentOrders = res.orders;
+      hasMore = res.hasMore;
+      lastCursor = cursorFrom(res.orders);
+
+      if (!res.orders.length) {
+        list.innerHTML = emptyStateHtml();
+      } else {
+        list.innerHTML = res.orders.map(card).join("") + (hasMore ? loadMoreRowHtml() : "");
+        if (hasMore) observeLoadMoreRow();
+      }
       // No badge refresh here on purpose. refresh() only ever runs for
       // reasons that can't move the "new orders" count by themselves —
       // switching filter tabs, searching, the initial load, or a poll-
@@ -111,6 +212,50 @@ window.AdminOrders = (() => {
     }
   }
 
+  async function loadMore() {
+    if (!hasMore || loadingMore || !lastCursor) return;
+    loadingMore = true;
+    setLoadMoreSpinning(true);
+    try {
+      const res = await Api.get(queryFor(lastCursor));
+      currentOrders = currentOrders.concat(res.orders);
+      hasMore = res.hasMore;
+      if (res.orders.length) lastCursor = cursorFrom(res.orders);
+      const row = document.getElementById("ordersLoadMore");
+      const cardsHtml = res.orders.map(card).join("");
+      if (row) {
+        row.insertAdjacentHTML("beforebegin", cardsHtml);
+        if (!hasMore) row.remove();
+        else setLoadMoreSpinning(false);
+      } else {
+        // Row got removed from under us somehow (shouldn't normally
+        // happen) — fall back to appending straight onto the list so the
+        // page isn't silently dropped.
+        list.insertAdjacentHTML("beforeend", cardsHtml);
+      }
+    } catch (err) {
+      Toast.show(err.message, "error");
+      setLoadMoreSpinning(false);
+    } finally {
+      loadingMore = false;
+    }
+  }
+
+  /** Resets every bit of pagination state back to "nothing loaded" —
+   * shared by the filter tabs and the search box below, since either one
+   * changes what the first page should contain and neither can safely
+   * keep whatever was already scrolled in under the old filter/search. */
+  function resetPagination() {
+    firstPageSnapshot = null;
+    currentOrders = [];
+    hasMore = false;
+    lastCursor = null;
+    if (scrollObserver) {
+      scrollObserver.disconnect();
+      scrollObserver = null;
+    }
+  }
+
   filterBar.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-status]");
     if (!btn) return;
@@ -118,7 +263,7 @@ window.AdminOrders = (() => {
     filterBar.querySelectorAll(".admin-tab").forEach((t) => t.classList.toggle("active", t === btn));
     searchTerm = "";
     searchInput.value = "";
-    lastSnapshot = null; // switching filters should always show a fresh load
+    resetPagination();
     refresh();
   });
 
@@ -126,7 +271,7 @@ window.AdminOrders = (() => {
     "input",
     Utils.debounce(() => {
       searchTerm = searchInput.value.trim();
-      lastSnapshot = null; // the filtered set just changed — force a fresh render
+      resetPagination();
       refresh();
     }, 250)
   );
@@ -172,9 +317,13 @@ window.AdminOrders = (() => {
    *     always a removal, never a case of staying but changing.
    *   - the All tab: the order stays in view either way, so its card is
    *     swapped in place for one built from the updated order.
-   *  Keeps currentOrders/lastSnapshot in sync too, so a background poll
-   *  shortly after doesn't see a mismatch against what's already
-   *  correctly on screen and force an unnecessary full re-render. */
+   *  Doesn't touch firstPageSnapshot — that's meant to reflect a real
+   *  server fetch of page 0, and this is a purely local edit, so it's
+   *  deliberately left stale here. The next poll-triggered refresh()
+   *  will compare against it, see a real difference (because something
+   *  really did change), and resync for real — exactly the same outcome
+   *  as if this had been kept in sync by hand, with far less to get
+   *  wrong in the meantime. */
   function applyLocalStatusChange(id, updated, cardEl) {
     const index = currentOrders.findIndex((o) => o.id === id);
     if (activeStatus === "") {
@@ -183,11 +332,17 @@ window.AdminOrders = (() => {
     } else {
       if (index !== -1) currentOrders.splice(index, 1);
       cardEl.remove();
-      if (!list.children.length) {
-        list.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>${searchTerm ? "No orders match your search." : "No orders here yet."}</p></div>`;
+      if (!currentOrders.length) {
+        // Genuinely more orders exist beyond this page (hasMore) — pull
+        // the next page in rather than claiming "no orders here" when
+        // there plainly are, just not loaded yet. The load-more row is
+        // still sitting in the DOM either way (only the individual order
+        // card above it was removed), so loadMore() has exactly the same
+        // insertion point it always does.
+        if (hasMore) loadMore();
+        else list.innerHTML = emptyStateHtml();
       }
     }
-    lastSnapshot = JSON.stringify(currentOrders);
   }
 
   /** Whether the currently active filter is one a brand-new incoming
