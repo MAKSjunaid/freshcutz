@@ -41,7 +41,14 @@
     whatsappLink.href = `https://wa.me/${phone}`;
     Cart.onChange(syncAllCardQuantities);
     Cart.onChange(updateCartBadges);
-    loadProducts();
+    // No fetch here on purpose. The catalog now loads from a single
+    // source — storefront-sync.js's /api/products/stream connection,
+    // which pushes the current catalog the instant it connects — instead
+    // of this page also doing its own separate GET for the exact same
+    // data right alongside it. Just show the loading placeholders; the
+    // stream's first push (handled by applyProducts() over there) is
+    // what replaces them, exactly the same way a later live update does.
+    grid.innerHTML = skeletonCards(3);
     updateCartBadges();
     initHeaderScrollEffect();
   }
@@ -67,20 +74,6 @@
       },
       { passive: true }
     );
-  }
-
-  async function loadProducts() {
-    grid.innerHTML = skeletonCards(3);
-    try {
-      allProducts = await Api.get("/api/products");
-      renderCategories();
-      renderGrid();
-      Cart.syncWithCatalog(allProducts);
-    } catch (err) {
-      grid.innerHTML = "";
-      emptyState.hidden = false;
-      emptyState.querySelector("p").textContent = err.message;
-    }
   }
 
   function skeletonCards(n) {
@@ -316,6 +309,14 @@
     renderGrid,
     patchVariantUI,
     footerHtml,
+    // Used by storefront-sync.js if the very first catalog push hasn't
+    // arrived after a generous wait — reuses the same empty-state spot
+    // renderGrid() uses for "no products right now", so there's only
+    // ever one visual slot for "nothing to show here" messaging.
+    showLoadError: (message) => {
+      emptyState.hidden = false;
+      emptyState.querySelector("p").textContent = message;
+    },
   };
 
   document.addEventListener("DOMContentLoaded", init);
