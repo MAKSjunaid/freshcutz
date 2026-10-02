@@ -327,6 +327,15 @@ window.AdminOrders = (() => {
       // though a fresh Apply's totals are already correct (see
       // admin-stats.js's invalidateDayOrdersCache for the full story).
       window.AdminStats?.invalidateDayOrdersCache();
+      // Same staleness problem, one tab over: if this order's customer
+      // already had their "View past orders" list fetched and cached on
+      // the Customers tab earlier in this session, it would otherwise
+      // keep showing this order under its old status until a full page
+      // reload wiped that cache out, since nothing ever told it the
+      // order had changed (see admin-customers.js's invalidateOrdersCache
+      // for the full story, including how an already-expanded card gets
+      // its panel refilled rather than left blank).
+      window.AdminCustomers?.invalidateOrdersCache(updated.phone);
       applyLocalStatusChange(Number(id), updated, card, action, flashStartedAt);
     } catch (err) {
       // The action didn't actually happen — undo the optimistic flash
