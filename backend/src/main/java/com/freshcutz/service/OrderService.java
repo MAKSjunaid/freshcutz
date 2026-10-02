@@ -386,6 +386,10 @@ public class OrderService {
         order.setDeliveredAt(now);
         order.setStatusUpdatedAt(now);
         Order saved = orderRepository.save(order);
+        // Keeps the Customers tab's "total delivered" figure current
+        // without it ever having to re-sum orders — see
+        // CustomerService.recordOrderDelivered.
+        customerService.recordOrderDelivered(saved);
         pushNotificationService.notifyOrderDelivered(saved);
         return OrderResponse.from(saved);
     }
@@ -419,10 +423,19 @@ public class OrderService {
         if (Instant.now().isAfter(cutoff)) {
             throw new BadRequestException("This order was marked Delivered/Cancelled more than 24 hours ago and can no longer be reopened.");
         }
+        // Captured before the status flip below: only an order that was
+        // actually Delivered (not Cancelled, which was never added to the
+        // customer's total to begin with) needs its amount backed out of
+        // that running total now that it's no longer delivered.
+        boolean wasDelivered = order.getStatus() == OrderStatus.DELIVERED;
         order.setStatus(OrderStatus.NEW);
         order.setDeliveredAt(null);
         order.setStatusUpdatedAt(Instant.now());
-        return OrderResponse.from(orderRepository.save(order));
+        Order saved = orderRepository.save(order);
+        if (wasDelivered) {
+            customerService.recordOrderUndelivered(saved);
+        }
+        return OrderResponse.from(saved);
     }
 
     private Order getEntity(Long id) {

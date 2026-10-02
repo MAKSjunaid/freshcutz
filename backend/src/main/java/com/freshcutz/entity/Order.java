@@ -38,7 +38,18 @@ import java.util.List;
         // than createdAt (when it was first placed) — see statusUpdatedAt's
         // own comment below for why. Same shape as idx_orders_status_created_at
         // above, just for the new column.
-        @Index(name = "idx_orders_status_status_updated_at", columnList = "status, status_updated_at")
+        @Index(name = "idx_orders_status_status_updated_at", columnList = "status, status_updated_at"),
+        // Backs the admin Customers tab's backfill/recompute query
+        // (CustomerRepository.backfillCustomerStats), which groups every
+        // order by phone and also picks each phone's single latest order
+        // (DISTINCT ON) — without this, both of those fall back to a full
+        // sequential scan of the whole orders table. The Customers tab's
+        // own list/search query no longer touches this table at all (see
+        // the customers table's own order_count/total_spent/last_order_at
+        // columns) — this index is purely for that occasional recompute,
+        // plus CustomerService.ordersForCustomer's per-customer history
+        // fetch (findByPhoneOrderByCreatedAtDesc).
+        @Index(name = "idx_orders_phone_created_at", columnList = "phone, created_at")
 })
 @Getter
 @Setter

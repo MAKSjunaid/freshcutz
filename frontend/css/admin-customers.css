@@ -41,6 +41,18 @@
   text-align: right;
 }
 
+/* Current delivery address — same font-size/line-height as an order
+   card's own .order-customer block (admin-cards.css) for a consistent
+   look between the two tabs. flatNo/addressLine always print (every
+   customer here has placed at least one order); landmark is its own
+   line only when the customer actually has one. */
+.customer-address {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 6px 0 2px;
+  line-height: 1.5;
+}
+
 .customer-order-count {
   font-size: 12px;
   font-weight: 700;
