@@ -3,10 +3,13 @@ package com.freshcutz.service;
 import com.freshcutz.dto.CustomerAddressUpdateRequest;
 import com.freshcutz.dto.CustomerLookupResponse;
 import com.freshcutz.dto.CustomerOrderResponse;
+import com.freshcutz.dto.CustomerSalesResponse;
 import com.freshcutz.dto.CustomerSummaryResponse;
+import com.freshcutz.dto.PagedCustomerSalesResponse;
 import com.freshcutz.dto.PagedCustomersResponse;
 import com.freshcutz.entity.Customer;
 import com.freshcutz.entity.Order;
+import com.freshcutz.entity.OrderStatus;
 import com.freshcutz.exception.BadRequestException;
 import com.freshcutz.repository.CustomerRepository;
 import com.freshcutz.repository.OrderRepository;
@@ -16,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -27,6 +32,11 @@ import java.util.stream.Collectors;
  * doesn't change how orders themselves are stored. */
 @Service
 public class CustomerService {
+
+    private static final ZoneId SHOP_ZONE = ZoneId.of("Asia/Kolkata");
+    // Stand-ins for a missing bound on a half-open [from, to] range, so
+    // the bounded ranking query never has to deal with NULL timestamps.
+    private static final Instant FAR_FUTURE = Instant.parse("2200-01-01T00:00:00Z");
 
     private final OrderRepository orderRepository;
     private final CustomerRepository customerRepository;
@@ -69,6 +79,102 @@ public class CustomerService {
                 .customers(customers)
                 .hasMore(hasMore)
                 .build();
+    }
+
+    /** Customers ranked by the total of their orders within an optional
+     * [from, to] shop-local date range — highest first — backing the
+     * Sales tab's "By Customer" view under its period dropdown and
+     * All/New/Delivered/Cancelled filter (see SalesStatusFilter). from and
+     * to are both null together for the All-time period and both set
+     * together for every other one.
+     *
+     * Three query paths on purpose, so none ever does more work than it
+     * has to:
+     *  - Delivered-only, All-time: the customers table's own running
+     *    total_spent/delivered_count (a plain indexed SELECT whose cost is
+     *    the page size — see CustomerRepository's class comment).
+     *  - Delivered-only, bounded period: aggregates just the delivered
+     *    orders inside that window (an index range scan on
+     *    idx_orders_status_delivered_at).
+     *  - Anything including New or Cancelled orders (All, New,
+     *    Cancelled): aggregated live from the orders table, each status
+     *    dated by its own moment — the delivered-only rollups can't know
+     *    about orders that aren't delivered. New orders are few by nature,
+     *    so this stays cheap for every bounded period.
+     * All three return the same row shape, so the frontend renders them
+     * identically.
+     *
+     * cursorSpent/cursorPhone are both null for the first page and both
+     * set (the last customer's own spent/phone) for every "load more"
+     * after — keyset pagination, same shape as every other infinite
+     * scroll here; phone is the tiebreaker since two customers can have
+     * spent exactly the same. */
+    @Transactional(readOnly = true)
+    public PagedCustomerSalesResponse listTopCustomers(LocalDate from, LocalDate to, SalesStatusFilter filter,
+                                                        String search, int size,
+                                                        BigDecimal cursorSpent, String cursorPhone) {
+        String q = (search == null || search.isBlank()) ? null : search.trim();
+        int pageSize = Math.min(Math.max(size, 1), 100);
+        Instant start = from == null ? Instant.EPOCH : from.atStartOfDay(SHOP_ZONE).toInstant();
+        Instant end = to == null ? FAR_FUTURE : to.plusDays(1).atStartOfDay(SHOP_ZONE).toInstant();
+
+        List<Object[]> rows;
+        if (filter == SalesStatusFilter.ALL && from == null && to == null) {
+            // Heaviest case: delivered figures come from the customers
+            // rollup, only New/Cancelled orders are read live.
+            rows = customerRepository.findTopCustomersAllTimeAll(q, cursorSpent, cursorPhone, pageSize + 1);
+        } else if (filter != SalesStatusFilter.DELIVERED) {
+            rows = customerRepository.findTopCustomersMix(
+                    filter.includeNew(), filter.includeDelivered(), filter.includeCancelled(),
+                    start, end, q, cursorSpent, cursorPhone, pageSize + 1);
+        } else if (from == null && to == null) {
+            rows = customerRepository.findTopCustomersAllTime(q, cursorSpent, cursorPhone, pageSize + 1);
+        } else {
+            rows = customerRepository.findTopCustomersBetween(start, end, q, cursorSpent, cursorPhone, pageSize + 1);
+        }
+        boolean hasMore = rows.size() > pageSize;
+        List<Object[]> pageRows = hasMore ? rows.subList(0, pageSize) : rows;
+
+        List<CustomerSalesResponse> customers = pageRows.stream()
+                .map(row -> CustomerSalesResponse.builder()
+                        .phone((String) row[0])
+                        .name((String) row[1])
+                        .flatNo((String) row[2])
+                        .addressLine((String) row[3])
+                        .landmark((String) row[4])
+                        .orders(toLong(row[5]).intValue())
+                        .spent(toBigDecimal(row[6]))
+                        .newOrders(toLong(row[7]).intValue())
+                        .cancelledOrders(toLong(row[8]).intValue())
+                        .newSpent(toBigDecimal(row[9]))
+                        .cancelledSpent(toBigDecimal(row[10]))
+                        .build())
+                .collect(Collectors.toList());
+        return PagedCustomerSalesResponse.builder()
+                .customers(customers)
+                .hasMore(hasMore)
+                .build();
+    }
+
+    /** Every customer of the By Customer ranking for a period and status
+     * box, not just one page — what "Export this period" writes on the
+     * By Customer sub-tab. Walks the same keyset pages as the screen
+     * (100 at a time) until the last one, so the numbers are exactly the
+     * ones the list shows. */
+    @Transactional(readOnly = true)
+    public List<CustomerSalesResponse> listAllTopCustomers(LocalDate from, LocalDate to, SalesStatusFilter filter) {
+        List<CustomerSalesResponse> all = new java.util.ArrayList<>();
+        BigDecimal cursorSpent = null;
+        String cursorPhone = null;
+        while (true) {
+            PagedCustomerSalesResponse page = listTopCustomers(from, to, filter, null, 100, cursorSpent, cursorPhone);
+            all.addAll(page.getCustomers());
+            if (!page.isHasMore() || page.getCustomers().isEmpty()) break;
+            CustomerSalesResponse last = page.getCustomers().get(page.getCustomers().size() - 1);
+            cursorSpent = last.getSpent();
+            cursorPhone = last.getPhone();
+        }
+        return all;
     }
 
     /** Turns one row from findCustomerSummariesPage's native query into a
@@ -127,6 +233,32 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public List<CustomerOrderResponse> ordersForCustomer(String phone) {
         return ordersByPhone(phone);
+    }
+
+    /** The same, narrowed to a Sales-tab period and status filter — what a
+     * By Customer card's "View past orders" shows, so it lists only the
+     * orders that make up that card's order count and total (e.g. today's
+     * Delivered ones), not the customer's whole history. Each order counts
+     * on its own status's date (see OrderRepository.findByPhoneInPeriod).
+     * Both bounds missing with the All filter is just the full history. */
+    @Transactional(readOnly = true)
+    public List<CustomerOrderResponse> ordersForCustomer(String phone, LocalDate from, LocalDate to,
+                                                         SalesStatusFilter filter) {
+        if (from == null && to == null && filter == SalesStatusFilter.ALL) {
+            return ordersByPhone(phone);
+        }
+        String normalized = phone == null ? "" : phone.replaceAll("\\D", "");
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+        Instant start = from == null ? Instant.EPOCH : from.atStartOfDay(SHOP_ZONE).toInstant();
+        Instant end = to == null ? FAR_FUTURE : to.plusDays(1).atStartOfDay(SHOP_ZONE).toInstant();
+        return orderRepository.findByPhoneInPeriod(normalized, start, end).stream()
+                .filter(o -> (o.getStatus() == OrderStatus.NEW && filter.includeNew())
+                        || (o.getStatus() == OrderStatus.DELIVERED && filter.includeDelivered())
+                        || (o.getStatus() == OrderStatus.CANCELLED && filter.includeCancelled()))
+                .map(CustomerOrderResponse::from)
+                .collect(Collectors.toList());
     }
 
     /** Public, unauthenticated lookup used at checkout to recognize a
@@ -286,6 +418,7 @@ public class CustomerService {
                 .orderCount(existing != null ? existing.getOrderCount() : null)
                 .totalSpent(existing != null ? existing.getTotalSpent() : null)
                 .lastOrderAt(existing != null ? existing.getLastOrderAt() : null)
+                .deliveredCount(existing != null ? existing.getDeliveredCount() : null)
                 .build());
 
         return CustomerLookupResponse.builder()
