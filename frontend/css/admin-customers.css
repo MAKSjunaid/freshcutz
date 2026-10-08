@@ -1,7 +1,8 @@
 /* ==========================================================================
-   Customers tab: one card per phone number, with an expandable list of
-   that customer's past orders. Split into its own file (see admin-cards.css
-   / admin-sales.css) to keep each stylesheet under the project's size limit.
+   Customer Info tab and Sales tab > By Customer: one card per phone number,
+   with an expandable list of that customer's past orders. Split into its
+   own file (see admin-cards.css / admin-sales.css) to keep each stylesheet
+   under the project's size limit.
    ========================================================================== */
 
 .customer-card {
@@ -15,10 +16,15 @@
 
 .customer-card-head {
   display: flex;
+  flex-wrap: nowrap;
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--sp-2);
   margin-bottom: 10px;
+}
+
+.customer-card-head > div:first-child {
+  min-width: 0; /* lets a long name wrap instead of pushing the stats off-screen */
 }
 
 .customer-name {
@@ -53,6 +59,8 @@
   line-height: 1.5;
 }
 
+/* Customer Info directory card: the order-count pill leads, with the
+   delivered total as the small line under it. */
 .customer-order-count {
   font-size: 12px;
   font-weight: 700;
@@ -64,6 +72,21 @@
 
 .customer-total-spent {
   font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Sales tab > By Customer card: ranked by spend, so the amount spent in
+   the selected period leads, with the delivered-order count as the small
+   supporting line under it. */
+.customer-sales-spent {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.customer-sales-count {
+  white-space: nowrap; /* always one line; scales with the screen width */
+  font-size: clamp(7.5px, 2.3vw, 10.5px);
   color: var(--text-muted);
 }
 
