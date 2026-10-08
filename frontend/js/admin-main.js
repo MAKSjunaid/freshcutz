@@ -25,7 +25,9 @@
     views.forEach((v) => v.classList.toggle("active", v.id === `view-${viewName}`));
     if (viewName === "products" && window.AdminProducts) window.AdminProducts.refresh();
     if (viewName === "orders" && window.AdminOrders) window.AdminOrders.refresh();
-    if (viewName === "stats" && window.AdminStats) window.AdminStats.refresh();
+    // Sales reloads only when stale / older than a few minutes / a new day — see
+    // AdminStats.refreshIfNeeded — so flipping back and forth costs nothing.
+    if (viewName === "stats" && window.AdminStats) window.AdminStats.refreshIfNeeded();
     if (viewName === "customers" && window.AdminCustomers) window.AdminCustomers.refresh();
   }
 
@@ -61,8 +63,16 @@
     if (currentView === "orders" && (delta < 0 || window.AdminOrders?.affectedByNewOrder?.())) {
       window.AdminOrders?.refresh();
     }
-    if (currentView === "stats" && delta < 0) {
-      window.AdminStats?.refresh();
+    // Sales now lists New orders too, so a brand-new order (delta > 0)
+    // changes what it shows just like a delivered/cancelled one does.
+    // When Sales isn't the visible tab nothing is fetched — it's just
+    // marked stale and reloads the next time it's opened.
+    // A period that ended before today can't be touched by a new order, so
+    // onRemoteChange leaves it alone (no requests, no re-render).
+    if (currentView === "stats") {
+      window.AdminStats?.onRemoteChange();
+    } else {
+      window.AdminStats?.noteRemoteChange();
     }
   }
 
