@@ -315,9 +315,8 @@ window.AdminOrders = (() => {
       // Every action here moves an order into or out of NEW status by
       // exactly one, so the badge can be adjusted locally too — no
       // AdminStats refresh() call here otherwise on purpose: the Sales
-      // tab's own visit (switchTo("stats") in admin-main.js) already
-      // re-fetches its rolling-window cards the moment anyone actually
-      // opens that tab.
+      // tab records which days this change touched below (noteOrderChanged)
+      // and reloads on its next visit only if the selected period contains one (switchTo("stats") in admin-main.js).
       window.AdminStats?.adjustNewOrdersCount(action === "reopen" ? 1 : -1);
       // Delivered/Cancelled/Reopen can all change which orders belong to
       // a day's DELIVERED bucket on the Sales tab (marking delivered adds
@@ -325,8 +324,8 @@ window.AdminOrders = (() => {
       // already expanded there earlier in this session, its cached order
       // list would otherwise keep showing the old, now-stale set even
       // though a fresh Apply's totals are already correct (see
-      // admin-stats.js's invalidateDayOrdersCache for the full story).
-      window.AdminStats?.invalidateDayOrdersCache();
+      // admin-stats.js's noteOrderChanged for the full story).
+      window.AdminStats?.noteOrderChanged(updated, currentOrders.find((o) => o.id === Number(id)));
       // Same staleness problem, one tab over: if this order's customer
       // already had their "View past orders" list fetched and cached on
       // the Customers tab earlier in this session, it would otherwise
@@ -336,6 +335,7 @@ window.AdminOrders = (() => {
       // for the full story, including how an already-expanded card gets
       // its panel refilled rather than left blank).
       window.AdminCustomers?.invalidateOrdersCache(updated.phone);
+      window.AdminSalesCustomers?.invalidateOrdersCache(updated.phone);
       applyLocalStatusChange(Number(id), updated, card, action, flashStartedAt);
     } catch (err) {
       // The action didn't actually happen — undo the optimistic flash
