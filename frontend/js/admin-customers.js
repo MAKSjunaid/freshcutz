@@ -10,7 +10,9 @@
  * admin actually taps "View past orders" on their card — see
  * dayOrdersCache-style caching below — instead of every customer's full
  * order history (items included) riding along with the list up front,
- * whether anyone looks at it or not. */
+ * whether anyone looks at it or not. (The Sales tab's By Customer view,
+ * ranked by spend for a chosen period, is a separate module —
+ * admin-sales-customers.js.) */
 
 window.AdminCustomers = (() => {
   const list = document.getElementById("customersList");
