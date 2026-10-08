@@ -35,18 +35,20 @@ public class OrderService {
     private final StoreSettingsService storeSettingsService;
     private final PushNotificationService pushNotificationService;
     private final CustomerService customerService;
+    private final ProductStatsService productStatsService;
     private final ObjectMapper objectMapper;
 
     public OrderService(OrderRepository orderRepository, ProductService productService,
                          OrderCodeGenerator orderCodeGenerator, StoreSettingsService storeSettingsService,
                          PushNotificationService pushNotificationService, CustomerService customerService,
-                         ObjectMapper objectMapper) {
+                         ProductStatsService productStatsService, ObjectMapper objectMapper) {
         this.orderRepository = orderRepository;
         this.productService = productService;
         this.orderCodeGenerator = orderCodeGenerator;
         this.storeSettingsService = storeSettingsService;
         this.pushNotificationService = pushNotificationService;
         this.customerService = customerService;
+        this.productStatsService = productStatsService;
         this.objectMapper = objectMapper;
     }
 
@@ -390,6 +392,10 @@ public class OrderService {
         // without it ever having to re-sum orders — see
         // CustomerService.recordOrderDelivered.
         customerService.recordOrderDelivered(saved);
+        // Same idea, one level down — keeps the Items tab's per-product
+        // quantity/revenue rollup current for every item this order
+        // contains, without it ever having to re-sum order_items either.
+        productStatsService.recordOrderDelivered(saved);
         pushNotificationService.notifyOrderDelivered(saved);
         return OrderResponse.from(saved);
     }
@@ -428,12 +434,18 @@ public class OrderService {
         // customer's total to begin with) needs its amount backed out of
         // that running total now that it's no longer delivered.
         boolean wasDelivered = order.getStatus() == OrderStatus.DELIVERED;
+        // Captured before deliveredAt is cleared below — productStatsService
+        // needs to know which day's rollup row this order's items were
+        // originally added to (see recordOrderUndelivered's own comment),
+        // and that information is gone the instant deliveredAt is nulled.
+        Instant previousDeliveredAt = order.getDeliveredAt();
         order.setStatus(OrderStatus.NEW);
         order.setDeliveredAt(null);
         order.setStatusUpdatedAt(Instant.now());
         Order saved = orderRepository.save(order);
         if (wasDelivered) {
             customerService.recordOrderUndelivered(saved);
+            productStatsService.recordOrderUndelivered(saved, previousDeliveredAt);
         }
         return OrderResponse.from(saved);
     }
