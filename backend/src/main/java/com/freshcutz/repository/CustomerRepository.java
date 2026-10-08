@@ -101,8 +101,8 @@ public interface CustomerRepository extends JpaRepository<Customer, String> {
     @Modifying
     @Query(value =
             "INSERT INTO customers " +
-            "    (phone, name, flat_no, address_line, landmark, order_count, total_spent, last_order_at, updated_at) " +
-            "VALUES (:phone, :name, :flatNo, :addressLine, :landmark, 1, 0, :lastOrderAt, now()) " +
+            "    (phone, name, flat_no, address_line, landmark, order_count, total_spent, delivered_count, last_order_at, updated_at) " +
+            "VALUES (:phone, :name, :flatNo, :addressLine, :landmark, 1, 0, 0, :lastOrderAt, now()) " +
             "ON CONFLICT (phone) DO UPDATE SET " +
             "    name = EXCLUDED.name, " +
             "    flat_no = EXCLUDED.flat_no, " +
@@ -125,7 +125,8 @@ public interface CustomerRepository extends JpaRepository<Customer, String> {
      * as upsertOnOrderPlaced. */
     @Modifying
     @Query(value =
-            "UPDATE customers SET total_spent = COALESCE(total_spent, 0) + :amount, updated_at = now() " +
+            "UPDATE customers SET total_spent = COALESCE(total_spent, 0) + :amount, " +
+            "    delivered_count = COALESCE(delivered_count, 0) + 1, updated_at = now() " +
             "WHERE phone = :phone",
             nativeQuery = true)
     void addToTotalSpent(@Param("phone") String phone, @Param("amount") BigDecimal amount);
@@ -138,7 +139,8 @@ public interface CustomerRepository extends JpaRepository<Customer, String> {
      * per delivery, and re-delivering adds it straight back). */
     @Modifying
     @Query(value =
-            "UPDATE customers SET total_spent = GREATEST(COALESCE(total_spent, 0) - :amount, 0), updated_at = now() " +
+            "UPDATE customers SET total_spent = GREATEST(COALESCE(total_spent, 0) - :amount, 0), " +
+            "    delivered_count = GREATEST(COALESCE(delivered_count, 0) - 1, 0), updated_at = now() " +
             "WHERE phone = :phone",
             nativeQuery = true)
     void subtractFromTotalSpent(@Param("phone") String phone, @Param("amount") BigDecimal amount);
@@ -171,20 +173,191 @@ public interface CustomerRepository extends JpaRepository<Customer, String> {
             "    SELECT o.phone, " +
             "           COUNT(*) AS order_count, " +
             "           COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'DELIVERED'), 0) AS total_spent, " +
+            "           COUNT(*) FILTER (WHERE o.status = 'DELIVERED') AS delivered_count, " +
             "           MAX(o.created_at) AS last_order_at " +
             "    FROM orders o " +
             "    GROUP BY o.phone" +
             ") " +
             "INSERT INTO customers " +
-            "    (phone, name, flat_no, address_line, landmark, order_count, total_spent, last_order_at, updated_at) " +
+            "    (phone, name, flat_no, address_line, landmark, order_count, total_spent, delivered_count, last_order_at, updated_at) " +
             "SELECT lo.phone, lo.customer_name, lo.flat_no, lo.address_line, lo.landmark, " +
-            "       agg.order_count, agg.total_spent, agg.last_order_at, now() " +
+            "       agg.order_count, agg.total_spent, agg.delivered_count, agg.last_order_at, now() " +
             "FROM latest_order lo " +
             "JOIN agg ON agg.phone = lo.phone " +
             "ON CONFLICT (phone) DO UPDATE SET " +
             "    order_count = EXCLUDED.order_count, " +
             "    total_spent = EXCLUDED.total_spent, " +
+            "    delivered_count = EXCLUDED.delivered_count, " +
             "    last_order_at = EXCLUDED.last_order_at",
             nativeQuery = true)
     int backfillCustomerStats();
+
+    /** Sales tab "By Customer", All-time period: customers ranked by
+     * total_spent (delivered orders only) straight off the running totals
+     * on this table — no join to orders, no aggregation at read time,
+     * same reasoning as findCustomerSummariesPage. Only customers with at
+     * least one delivered order appear (delivered_count > 0): this is a
+     * sales ranking, not a directory. Search, cursor and limit work
+     * exactly as in findCustomerSummariesPage, with (total_spent, phone)
+     * as the two keyset keys instead of three. Rows come back as
+     * (phone, name, flat_no, address_line, landmark, delivered_orders,
+     * spent) — the same shape as findTopCustomersBetween below, so
+     * CustomerService maps both identically. */
+    @Query(value =
+            "SELECT phone, name, flat_no, address_line, landmark, " +
+            "       COALESCE(delivered_count, 0) AS delivered_orders, " +
+            "       total_spent AS spent, " +
+            "       0 AS new_orders, 0 AS cancelled_orders, 0 AS new_spent, 0 AS cancelled_spent " +
+            "FROM customers " +
+            "WHERE COALESCE(delivered_count, 0) > 0 " +
+            "  AND (CAST(:search AS text) IS NULL OR " +
+            "       LOWER(phone) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR " +
+            "       LOWER(name) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) " +
+            "  AND (CAST(:cursorSpent AS numeric) IS NULL OR " +
+            "       total_spent < CAST(:cursorSpent AS numeric) OR " +
+            "       (total_spent = CAST(:cursorSpent AS numeric) AND " +
+            "        phone < CAST(:cursorPhone AS varchar))) " +
+            "ORDER BY total_spent DESC, phone DESC " +
+            "LIMIT :limit",
+            nativeQuery = true)
+    List<Object[]> findTopCustomersAllTime(@Param("search") String search,
+                                            @Param("cursorSpent") BigDecimal cursorSpent,
+                                            @Param("cursorPhone") String cursorPhone,
+                                            @Param("limit") int limit);
+
+    /** Sales tab "By Customer", any bounded period: aggregates only the
+     * delivered orders whose delivered_at falls in [from, to) by phone
+     * (an index range scan on idx_orders_status_delivered_at — cost
+     * scales with that window, not with total order history), then joins
+     * the small result to customers for name/address. Same return shape
+     * and keyset (spent, phone) as findTopCustomersAllTime. Search is
+     * applied after the aggregation, on the already-small per-phone
+     * result. from/to are always real instants here — CustomerService
+     * substitutes EPOCH / a far-future instant for a missing bound. */
+    @Query(value =
+            "WITH agg AS (" +
+            "    SELECT o.phone, COUNT(*) AS delivered_orders, SUM(o.total_amount) AS spent " +
+            "    FROM orders o " +
+            "    WHERE o.status = 'DELIVERED' " +
+            "      AND o.delivered_at >= CAST(:from AS timestamptz) " +
+            "      AND o.delivered_at < CAST(:to AS timestamptz) " +
+            "    GROUP BY o.phone" +
+            ") " +
+            "SELECT c.phone, c.name, c.flat_no, c.address_line, c.landmark, a.delivered_orders, a.spent, " +
+            "       0 AS new_orders, 0 AS cancelled_orders, 0 AS new_spent, 0 AS cancelled_spent " +
+            "FROM agg a " +
+            "JOIN customers c ON c.phone = a.phone " +
+            "WHERE (CAST(:search AS text) IS NULL OR " +
+            "       LOWER(c.phone) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR " +
+            "       LOWER(c.name) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) " +
+            "  AND (CAST(:cursorSpent AS numeric) IS NULL OR " +
+            "       a.spent < CAST(:cursorSpent AS numeric) OR " +
+            "       (a.spent = CAST(:cursorSpent AS numeric) AND " +
+            "        c.phone < CAST(:cursorPhone AS varchar))) " +
+            "ORDER BY a.spent DESC, c.phone DESC " +
+            "LIMIT :limit",
+            nativeQuery = true)
+    List<Object[]> findTopCustomersBetween(@Param("from") Instant from,
+                                            @Param("to") Instant to,
+                                            @Param("search") String search,
+                                            @Param("cursorSpent") BigDecimal cursorSpent,
+                                            @Param("cursorPhone") String cursorPhone,
+                                            @Param("limit") int limit);
+
+    /** Sales tab "By Customer" for any status filter other than
+     * Delivered-only (All, New, Cancelled — see SalesStatusFilter):
+     * aggregates the matching orders by phone straight from the orders
+     * table, each status dated by its own moment (OrderMixSql.PREDICATE),
+     * then joins the small result to customers for name/address. Ranked
+     * by the total of those orders, with the same (spent, phone) keyset
+     * and the same row shape as the two Delivered-only queries above plus
+     * the last two columns filled in for real: how many of the orders are
+     * New and how many Cancelled. New orders are few by nature (they
+     * leave New as soon as they're actioned), so this stays cheap for
+     * every bounded period; only All-time with Cancelled included reads a
+     * lot of rows. from/to are always real instants here. */
+    @Query(value =
+            "WITH agg AS (" +
+            "    SELECT o.phone, COUNT(*) AS orders, SUM(o.total_amount) AS spent, " +
+            "           COUNT(*) FILTER (WHERE o.status = 'NEW') AS new_orders, " +
+            "           COUNT(*) FILTER (WHERE o.status = 'CANCELLED') AS cancelled_orders, " +
+            "           COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'NEW'), 0) AS new_spent, " +
+            "           COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'CANCELLED'), 0) AS cancelled_spent " +
+            "    FROM orders o " +
+            "    WHERE " + OrderMixSql.PREDICATE +
+            "    GROUP BY o.phone" +
+            ") " +
+            "SELECT c.phone, c.name, c.flat_no, c.address_line, c.landmark, " +
+            "       a.orders, a.spent, a.new_orders, a.cancelled_orders, a.new_spent, a.cancelled_spent " +
+            "FROM agg a " +
+            "JOIN customers c ON c.phone = a.phone " +
+            "WHERE (CAST(:search AS text) IS NULL OR " +
+            "       LOWER(c.phone) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR " +
+            "       LOWER(c.name) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) " +
+            "  AND (CAST(:cursorSpent AS numeric) IS NULL OR " +
+            "       a.spent < CAST(:cursorSpent AS numeric) OR " +
+            "       (a.spent = CAST(:cursorSpent AS numeric) AND " +
+            "        c.phone < CAST(:cursorPhone AS varchar))) " +
+            "ORDER BY a.spent DESC, c.phone DESC " +
+            "LIMIT :limit",
+            nativeQuery = true)
+    List<Object[]> findTopCustomersMix(@Param("incNew") boolean incNew,
+                                        @Param("incDelivered") boolean incDelivered,
+                                        @Param("incCancelled") boolean incCancelled,
+                                        @Param("from") Instant from,
+                                        @Param("to") Instant to,
+                                        @Param("search") String search,
+                                        @Param("cursorSpent") BigDecimal cursorSpent,
+                                        @Param("cursorPhone") String cursorPhone,
+                                        @Param("limit") int limit);
+
+    /** Sales tab "By Customer" for the heaviest case — All-time period
+     * with the All filter — without reading a single delivered order:
+     * Delivered figures come off the running totals on this table
+     * (delivered_count / total_spent), and only the NEW and CANCELLED
+     * orders (a small slice of history) are aggregated live from orders,
+     * by phone, and added on top. Same row shape and (spent, phone)
+     * keyset as findTopCustomersMix, whose All-time answer this
+     * reproduces: spent = delivered total + new total + cancelled total,
+     * orders = all three counts. Customers with no orders at all are
+     * left out. */
+    @Query(value =
+            "WITH x AS (" +
+            "    SELECT o.phone, COUNT(*) AS cnt, SUM(o.total_amount) AS amt, " +
+            "           COUNT(*) FILTER (WHERE o.status = 'NEW') AS new_orders, " +
+            "           COUNT(*) FILTER (WHERE o.status = 'CANCELLED') AS cancelled_orders, " +
+            "           COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'NEW'), 0) AS new_spent, " +
+            "           COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'CANCELLED'), 0) AS cancelled_spent " +
+            "    FROM orders o " +
+            "    WHERE o.status IN ('NEW', 'CANCELLED') " +
+            "    GROUP BY o.phone" +
+            "), r AS (" +
+            "    SELECT c.phone, c.name, c.flat_no, c.address_line, c.landmark, " +
+            "           COALESCE(c.delivered_count, 0) + COALESCE(x.cnt, 0) AS orders, " +
+            "           COALESCE(c.total_spent, 0) + COALESCE(x.amt, 0) AS spent, " +
+            "           COALESCE(x.new_orders, 0) AS new_orders, " +
+            "           COALESCE(x.cancelled_orders, 0) AS cancelled_orders, " +
+            "           COALESCE(x.new_spent, 0) AS new_spent, " +
+            "           COALESCE(x.cancelled_spent, 0) AS cancelled_spent " +
+            "    FROM customers c " +
+            "    LEFT JOIN x ON x.phone = c.phone " +
+            "    WHERE (CAST(:search AS text) IS NULL OR " +
+            "           LOWER(c.phone) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR " +
+            "           LOWER(c.name) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')))" +
+            ") " +
+            "SELECT r.phone, r.name, r.flat_no, r.address_line, r.landmark, " +
+            "       r.orders, r.spent, r.new_orders, r.cancelled_orders, r.new_spent, r.cancelled_spent " +
+            "FROM r " +
+            "WHERE r.orders > 0 " +
+            "  AND (CAST(:cursorSpent AS numeric) IS NULL OR " +
+            "       r.spent < CAST(:cursorSpent AS numeric) OR " +
+            "       (r.spent = CAST(:cursorSpent AS numeric) AND " +
+            "        r.phone < CAST(:cursorPhone AS varchar))) " +
+            "ORDER BY r.spent DESC, r.phone DESC " +
+            "LIMIT :limit",
+            nativeQuery = true)
+    List<Object[]> findTopCustomersAllTimeAll(@Param("search") String search,
+                                               @Param("cursorSpent") BigDecimal cursorSpent,
+                                               @Param("cursorPhone") String cursorPhone,
+                                               @Param("limit") int limit);
 }
