@@ -29,7 +29,12 @@ import java.time.Instant;
         // comparisons) falls back to scanning and sorting the whole
         // customers table on every page, same reasoning as the Orders
         // tab's own indexes.
-        @Index(name = "idx_customers_order_count_last_order_at", columnList = "order_count, last_order_at")
+        @Index(name = "idx_customers_order_count_last_order_at", columnList = "order_count, last_order_at"),
+        // Backs the Sales tab's "By Customer" ranking for the All-time
+        // period (CustomerRepository.findTopCustomersAllTime), which sorts
+        // by total_spent DESC, phone DESC straight off this table — same
+        // reasoning as the index above, for the other sort order.
+        @Index(name = "idx_customers_total_spent_phone", columnList = "total_spent, phone")
 })
 @Getter
 @Setter
@@ -77,6 +82,17 @@ public class Customer {
 
     @Column(name = "last_order_at")
     private Instant lastOrderAt;
+
+    // How many of this customer's orders are currently Delivered — the
+    // "orders" figure beside totalSpent on the Sales tab's By Customer
+    // view for the All-time period, so that view can report delivered
+    // orders (matching what totalSpent actually sums) straight off this
+    // row instead of counting orders at read time. Kept current at the
+    // same two moments totalSpent is: +1 on delivery, -1 on reopen from
+    // Delivered (see CustomerRepository.addToTotalSpent/
+    // subtractFromTotalSpent), and recomputed by backfillCustomerStats.
+    @Column(name = "delivered_count")
+    private Integer deliveredCount;
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;

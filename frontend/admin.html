@@ -22,6 +22,7 @@
 <link rel="stylesheet" href="css/admin-cards.css" />
 <link rel="stylesheet" href="css/admin-sales.css" />
 <link rel="stylesheet" href="css/admin-customers.css" />
+<link rel="stylesheet" href="css/admin-items.css" />
 </head>
 <body class="admin">
 
@@ -75,7 +76,7 @@
         <button class="admin-tab active" data-view="orders">📦 Orders <span class="count-pill" id="newOrdersPill" hidden>0</span></button>
         <button class="admin-tab" data-view="products">🍗 Products</button>
         <button class="admin-tab" data-view="stats">📊 Sales</button>
-        <button class="admin-tab" data-view="customers">👥 Customers</button>
+        <button class="admin-tab" data-view="customers">👥 Customer Info</button>
       </nav>
     </div>
 
@@ -99,7 +100,17 @@
 
     <section class="admin-view" id="view-stats">
       <div class="sales-toolbar">
-        <div class="date-range-row">
+        <select id="salesPeriod" class="period-select" aria-label="Period">
+          <option value="today" selected>Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="all">All time</option>
+          <option value="custom">Custom date</option>
+        </select>
+
+        <!-- Only shown while "Custom date" is the selected period. -->
+        <div class="date-range-row" id="customRangeRow" hidden>
           <div class="date-range-fields">
             <div class="date-field">
               <div class="date-field-box">
@@ -124,21 +135,46 @@
           </div>
           <div class="date-range-actions">
             <button class="btn btn-gold btn-sm" id="applyRangeBtn">Apply</button>
-            <button class="btn btn-ghost btn-sm" id="clearRangeBtn" hidden>Clear</button>
           </div>
         </div>
-        <div class="sales-actions-row">
-          <button class="btn btn-outline btn-sm" id="exportFilteredBtn" hidden>⬇ Export filtered</button>
-          <button class="btn btn-outline btn-sm" id="exportAllBtn">⬇ Export all</button>
-          <label class="btn btn-ghost btn-sm file-btn">
-            ⬆ Import
-            <input type="file" id="importFile" accept=".xlsx" hidden />
-          </label>
-        </div>
       </div>
-      <div class="range-result" id="rangeResult" hidden></div>
+
+      <!-- Header for whichever period is selected: money + delivered
+           orders, then the All/New/Delivered/Cancelled boxes. Filled in
+           by admin-stats.js. -->
+      <div class="sales-summary" id="salesSummary"></div>
+      <div class="stats-grid" id="salesStatusGrid"></div>
+
+      <nav class="sales-subtabs" id="salesSubtabs">
+        <button class="sales-subtab active" data-pane="days">By Day</button>
+        <button class="sales-subtab" data-pane="customers">By Customer</button>
+        <button class="sales-subtab" data-pane="items">By Item</button>
+      </nav>
+
+      <div class="sales-pane" id="salesPane-days">
+        <div class="range-result" id="rangeResult"></div>
+      </div>
+
+      <div class="sales-pane" id="salesPane-customers" hidden>
+        <div class="search-row">
+          <input type="search" id="salesCustomerSearchInput" class="search-input" placeholder="🔎 Search by phone or name" />
+        </div>
+        <div id="salesCustomersList"></div>
+      </div>
+
+      <div class="sales-pane" id="salesPane-items" hidden>
+        <div id="itemsList"></div>
+      </div>
+
+      <div class="sales-actions-row sales-data-actions">
+        <button class="btn btn-outline btn-sm" id="exportFilteredBtn">⬇ Export this period</button>
+        <button class="btn btn-outline btn-sm" id="exportAllBtn">⬇ Export all</button>
+        <label class="btn btn-ghost btn-sm file-btn">
+          ⬆ Import
+          <input type="file" id="importFile" accept=".xlsx" hidden />
+        </label>
+      </div>
       <div class="import-result" id="importResult" hidden></div>
-      <div class="stats-grid" id="statsGrid"></div>
     </section>
 
     <section class="admin-view" id="view-customers">
@@ -163,6 +199,8 @@
   <script src="js/admin-orders.js"></script>
   <script src="js/admin-stats.js"></script>
   <script src="js/admin-customers.js"></script>
+  <script src="js/admin-sales-customers.js"></script>
+  <script src="js/admin-items.js"></script>
   <script src="js/admin-main.js"></script>
 </body>
 </html>

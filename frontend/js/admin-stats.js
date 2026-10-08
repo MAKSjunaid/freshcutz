@@ -1,22 +1,51 @@
-/* Sales summary cards on the Stats tab, the "new orders" nav badge, plus
- * the date-range filter, xlsx export/import controls. */
+/* The Sales tab: a period dropdown (Today / Yesterday / Last 7 days / Last
+ * 30 days / All time / Custom date) that drives everything on the tab —
+ * the money + order-count header, the All/New/Delivered/Cancelled boxes,
+ * and three sub-tabs underneath (By Day, By Customer, By Item). This
+ * module owns the period and the header and the By Day list; By Customer
+ * and By Item live in admin-customers.js / admin-items.js, which read the
+ * selected period back through getRange(). Also owns the "new orders" nav
+ * badge, the custom date-range fields, and the xlsx export/import
+ * controls.
+ *
+ * Switching period (or arriving at the tab) re-fetches the header and the
+ * ACTIVE sub-tab only; the other two are just marked dirty and fetched
+ * the first time they're opened, so a period change never pays for lists
+ * nobody is looking at.
+ *
+ * Request economy: the header and the By Day list come from ONE request
+ * (/summary/overview) — one SQL query on the server too. When By Day isn't
+ * the visible sub-tab, only the header is requested (size=0). By Day is
+ * paged by the server (31 days, then "Show more days" asks for older
+ * ones). Every day row carries all statuses' numbers, so tapping the
+ * All / New / Delivered / Cancelled boxes re-renders from data already in
+ * hand with no request, and By Customer / By Item do the same whenever
+ * their All list was loaded in full (see their own files). A status whose
+ * header count is 0 never fetches anything at all. Coming back to the Sales tab doesn't refetch at all unless
+ * something marked it stale (an order changed, the poll saw a change, the
+ * shop's date rolled over) or the data is more than 5 minutes old. */
 
 window.AdminStats = (() => {
-  const grid = document.getElementById("statsGrid");
   const pill = document.getElementById("newOrdersPill");
+  const periodSelect = document.getElementById("salesPeriod");
+  const customRow = document.getElementById("customRangeRow");
   const fromInput = document.getElementById("statsFrom");
   const toInput = document.getElementById("statsTo");
   const fromHint = document.getElementById("statsFromHint");
   const toHint = document.getElementById("statsToHint");
   const applyBtn = document.getElementById("applyRangeBtn");
-  const clearBtn = document.getElementById("clearRangeBtn");
+  const summaryEl = document.getElementById("salesSummary");
+  const statusGrid = document.getElementById("salesStatusGrid");
+  const subtabs = document.getElementById("salesSubtabs");
   const rangeResult = document.getElementById("rangeResult");
   const exportFilteredBtn = document.getElementById("exportFilteredBtn");
   const exportAllBtn = document.getElementById("exportAllBtn");
   const importFile = document.getElementById("importFile");
   const importResult = document.getElementById("importResult");
-  let lastSnapshot = null; // skip re-rendering the cards on a background poll
-  // that finds nothing changed, so they don't flash every poll cycle.
+  let lastSummary = null; // the header numbers last received from the server
+  let summaryValid = false; // true while lastSummary belongs to the period on screen
+  let lastSnapshot = null; // skip re-rendering the header when a refresh
+  // finds nothing changed, so it doesn't flash on every revisit.
 
   function card(label, value, sub) {
     return `<div class="stat-card anim-fade-up">
@@ -26,18 +55,104 @@ window.AdminStats = (() => {
     </div>`;
   }
 
-  /** Shows/hides the small spinner next to every card's label at once —
-   * all four numbers come from the same single API call and always
-   * update together, so there's no such thing as just "Today" being
-   * stale while the others are current. Re-queries the DOM live each
-   * time rather than caching the spinner elements, since grid.innerHTML
-   * only actually gets replaced (see refresh() below) when the fetched
-   * data turns out to differ from last time — the very same elements
-   * from before can still be sitting there otherwise. */
+  /** Shows/hides the small spinner next to every header card's label at
+   * once — the money card and all four status boxes come from the same
+   * single API call and always update together. Re-queries the DOM live
+   * each time rather than caching the spinner elements, since the cards'
+   * innerHTML only gets replaced when the fetched data actually differs
+   * from last time (see renderSummary). */
   function setStatsLoading(loading) {
-    grid.querySelectorAll(".stat-spinner").forEach((el) => {
+    document.querySelectorAll("#salesSummary .stat-spinner, #salesStatusGrid .stat-spinner").forEach((el) => {
       el.hidden = !loading;
     });
+  }
+
+  // ---- Period -----------------------------------------------------------
+  // "Today" is the SHOP's today (India time), not whatever the browser's
+  // clock says — an admin checking from a laptop set to another time zone
+  // must still get the same days the backend (see SalesService.SHOP_ZONE)
+  // buckets orders into. The en-CA locale formats as yyyy-MM-dd, which is
+  // exactly what the API's from/to params and <input type="date"> use.
+  const SHOP_TIME_ZONE = "Asia/Kolkata";
+
+  function shopToday() {
+    return new Date().toLocaleDateString("en-CA", { timeZone: SHOP_TIME_ZONE });
+  }
+
+  function addDays(dateStr, n) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+  }
+
+  const PERIOD_LABELS = {
+    today: "Today",
+    yesterday: "Yesterday",
+    "7d": "Last 7 days",
+    "30d": "Last 30 days",
+    all: "All time",
+  };
+
+  let activePeriod = "today"; // the period whose data is on screen
+  let customRange = null; // { from, to } once a custom range has been applied
+
+  /** The selected period as { from, to } (inclusive shop-local days,
+   *  yyyy-MM-dd), or null for All time. Re-evaluated on every call rather
+   *  than stored, so a tab left open past midnight rolls "Today" forward
+   *  on its next refresh. The By Customer / By Item modules call this to
+   *  scope their own requests. */
+  function getRange() {
+    const today = shopToday();
+    switch (activePeriod) {
+      case "today":
+        return { from: today, to: today };
+      case "yesterday": {
+        const y = addDays(today, -1);
+        return { from: y, to: y };
+      }
+      case "7d":
+        return { from: addDays(today, -6), to: today };
+      case "30d":
+        return { from: addDays(today, -29), to: today };
+      case "custom":
+        return customRange;
+      default:
+        return null;
+    }
+  }
+
+  function periodLabel() {
+    if (activePeriod === "custom" && customRange) {
+      return customRange.from === customRange.to
+        ? formatDateDisplay(customRange.from)
+        : `${formatDateDisplay(customRange.from)} → ${formatDateDisplay(customRange.to)}`;
+    }
+    return PERIOD_LABELS[activePeriod] || "Sales";
+  }
+
+  /** URL of the overview request: the period's range (no status — the
+   *  response carries every status), how many day rows to return (0 = header only) and, for "Show more
+   *  days", the oldest day already on screen. */
+  function overviewUrl(size, cursorDay) {
+    const params = new URLSearchParams();
+    const range = getRange();
+    if (range) {
+      params.set("from", range.from);
+      params.set("to", range.to);
+    }
+    params.set("size", String(size));
+    if (cursorDay) params.set("cursorDay", cursorDay);
+    return `/api/admin/orders/summary/overview?${params.toString()}`;
+  }
+
+  // Which orders the three lists below show — set by tapping the
+  // All / New / Delivered / Cancelled boxes. Opens on All so an order
+  // placed a minute ago (still New) is visible straight away; tap
+  // Delivered for actual sales only. The period header's money card is
+  // unaffected: it is always Delivered sales for the period.
+  let statusFilter = "ALL";
+
+  function getStatus() {
+    return statusFilter;
   }
 
   // Last known "new orders" badge count. In this app's order lifecycle,
@@ -70,36 +185,389 @@ window.AdminStats = (() => {
     return previous === null ? 0 : newOrders - previous;
   }
 
-  async function refresh() {
+  function renderSummary(s) {
+    const label = periodLabel();
+    const data = s || { total: 0, orders: 0, all: 0, newOrders: 0, delivered: 0, cancelled: 0 };
+    if (s) lastSummary = s;
+    const snapshot = label + JSON.stringify(data);
+    if (snapshot === lastSnapshot) return;
+    lastSnapshot = snapshot;
+    summaryEl.innerHTML = card(
+      label,
+      Utils.formatMoney(data.total),
+      `${data.orders} order${data.orders === 1 ? "" : "s"}`
+    );
+    statusGrid.innerHTML = [
+      statusBox("ALL", "All", data.all),
+      statusBox("NEW", "New", data.newOrders),
+      statusBox("DELIVERED", "Delivered", data.delivered),
+      statusBox("CANCELLED", "Cancelled", data.cancelled),
+    ].join("");
+  }
+
+  /** One of the four status boxes — a button, since tapping it filters
+   *  the lists underneath to that status. */
+  function statusBox(status, label, count) {
+    return `<button type="button" class="stat-card status-box anim-fade-up${status === statusFilter ? " is-selected" : ""}" data-status="${status}">
+      <div class="label">${label}<span class="spinner spinner-dark stat-spinner" hidden></span></div>
+      <div class="value">${count}</div>
+    </button>`;
+  }
+
+  /** The header count of the selected status box (All / New / Delivered /
+   *  Cancelled) for the period on screen, or null when it isn't known yet
+   *  (header still loading). 0 means there is nothing to fetch: every
+   *  status is a part of All, so a zero here means that status has no
+   *  orders in the period and its list is simply empty — the By Customer /
+   *  By Item modules check this before making any request. */
+  function getSelectedCount() {
+    if (!summaryValid || !lastSummary) return null;
+    return { ALL: lastSummary.all, NEW: lastSummary.newOrders, DELIVERED: lastSummary.delivered, CANCELLED: lastSummary.cancelled }[statusFilter] ?? null;
+  }
+
+  /** How many orders the whole period has (the All box), or null while
+   *  the header is unknown. By Customer / By Item use it to see that their
+   *  All list is guaranteed to fit on one page, so a first visit made
+   *  while New/Delivered/Cancelled is selected can still fetch All once
+   *  and serve every box from it. */
+  function getTotalCount() {
+    return summaryValid && lastSummary ? lastSummary.all : null;
+  }
+
+  statusGrid.addEventListener("click", (e) => {
+    const box = e.target.closest(".status-box");
+    if (!box || box.dataset.status === statusFilter) return;
+    statusFilter = box.dataset.status;
+    statusGrid.querySelectorAll(".status-box").forEach((b) => {
+      b.classList.toggle("is-selected", b.dataset.status === statusFilter);
+    });
+    // The header numbers don't depend on the selection, and By Day already
+    // holds every status's numbers for each loaded day — so it just
+    // re-renders (no request) when it has been loaded; otherwise it waits
+    // for its first load. By Customer / By Item decide for themselves
+    // whether their loaded All list can answer or a request is needed.
+    PANES.forEach((p) => {
+      dirty[p] = p !== "days" || !dailyLoaded;
+    });
+    if (dailyLoaded) renderDays();
+    if (dirty[activePane]) refreshPane(activePane);
+  });
+
+  let overviewSeq = 0;
+  let loadedAt = 0; // when the Sales data on screen was last fetched
+  let loadedRangeKey = null; // which period that data was for
+  let dailyLoaded = false; // By Day's rows on screen are current for this period
+  const FRESH_MS = 5 * 60 * 1000;
+
+  // Why the data on screen might be out of date, recorded while the admin
+  // is elsewhere and checked when they come back (refreshIfNeeded). Kept
+  // separate on purpose so a change only costs a reload when it can
+  // actually affect the period being viewed:
+  //  - staleAll: unknown cause (a failed fetch) — reload whatever period.
+  //  - changedDates: shop-local days an order change from THIS session
+  //    touched (see noteOrderChanged) — reload only a period containing one.
+  //  - remoteChanged: the poll saw the new-order count move (a customer
+  //    ordered, or another device acted) — those are today's events, so
+  //    only a period that includes today is affected.
+  let staleAll = true;
+  let remoteChanged = false;
+  const changedDates = new Set();
+
+  const rangeKey = () => JSON.stringify(getRange());
+
+  /** True when the selected period reaches today (or is All time), i.e. it
+   *  can still change just because time passes or a new order arrives. A
+   *  period that ended before today only changes if an old order's status
+   *  is changed. */
+  function includesToday(range) {
+    return !range || range.to >= shopToday();
+  }
+
+  function inRange(date, range) {
+    return !range || (date >= range.from && date <= range.to);
+  }
+
+  /** The shop-local yyyy-MM-dd of a timestamp, or null. */
+  function shopDateOf(instant) {
+    return instant ? new Date(instant).toLocaleDateString("en-CA", { timeZone: SHOP_TIME_ZONE }) : null;
+  }
+
+  /** The poll saw something change somewhere while the admin is on another
+   *  tab: remember it, but fetch nothing. It only matters to a period that
+   *  includes today — see remoteChanged above. */
+  function noteRemoteChange() {
+    remoteChanged = true;
+  }
+
+  /** The poll saw a change while the Sales tab IS open. A period that
+   *  ended before today can't be affected by a new order, so it is left
+   *  alone — no requests, no re-render; otherwise reload as usual. */
+  function onRemoteChange() {
+    if (includesToday(getRange())) refresh();
+  }
+
+  /** Called when an order's status was changed from the Orders tab, with
+   *  the updated order and (if known) how it looked before. Works out
+   *  which days that touched — the day it was placed (its New side), the
+   *  day it was delivered/cancelled, and, for a reopen, the day it had
+   *  been delivered/cancelled before — and clears the cached day lists.
+   *  The Sales data is only reloaded on the next visit if the selected
+   *  period contains one of those days. */
+  function noteOrderChanged(updated, before) {
+    clearDayCaches();
+    [updated?.createdAt, updated?.statusUpdatedAt, updated?.deliveredAt, before?.statusUpdatedAt, before?.deliveredAt]
+      .map(shopDateOf)
+      .filter(Boolean)
+      .forEach((d) => changedDates.add(d));
+    if (!updated) staleAll = true;
+  }
+
+  /** What opening the Sales tab calls: reloads only when there's a reason
+   *  — never loaded, a different period than what's on screen (e.g. a
+   *  "Yesterday" that rolled over), a recorded change that can affect this
+   *  period, or (for a period that includes today) data older than
+   *  FRESH_MS. A past period is otherwise never reloaded just by
+   *  revisiting. */
+  function refreshIfNeeded() {
+    const range = getRange();
+    const needs =
+      !loadedAt ||
+      loadedRangeKey !== rangeKey() ||
+      staleAll ||
+      [...changedDates].some((d) => inRange(d, range)) ||
+      (includesToday(range) && (remoteChanged || Date.now() - loadedAt > FRESH_MS));
+    if (needs) refresh();
+  }
+
+  /** One request for the header (money + status boxes) and, when
+   *  `withDays`, the first page of the By Day list. The seq guard drops a
+   *  slow earlier response that lands after a newer request was already
+   *  made — otherwise flipping quickly between periods could leave the
+   *  screen showing the wrong one. Header-only (withDays false) is used
+   *  when another sub-tab is the visible one. */
+  async function loadOverview(withDays) {
+    const seq = ++overviewSeq;
+    if (withDays) dailyLoaded = false;
     const firstLoad = lastSnapshot === null;
-    // Shown for the whole request, whichever of the three refresh
-    // triggers caused it (direct call after an order action, the
-    // background poll, or switching into this tab) — and always
-    // hidden again in the finally below, success or failure, so it can
-    // never get stuck showing.
+    const hadDays = rangeResult.children.length > 0;
+    if (firstLoad) renderSummary(null); // placeholders, so the spinners have cards to sit in
     setStatsLoading(true);
-    try {
-      const s = await Api.get("/api/admin/orders/summary");
-      const snapshot = JSON.stringify(s);
-      if (snapshot !== lastSnapshot) {
-        lastSnapshot = snapshot;
-        grid.innerHTML = [
-          card("Today", Utils.formatMoney(s.todayTotal), `${s.todayOrders} order${s.todayOrders === 1 ? "" : "s"}`),
-          card("Last 7 days", Utils.formatMoney(s.weekTotal), `${s.weekOrders} order${s.weekOrders === 1 ? "" : "s"}`),
-          card("Last 30 days", Utils.formatMoney(s.monthTotal), `${s.monthOrders} order${s.monthOrders === 1 ? "" : "s"}`),
-          card("All time", Utils.formatMoney(s.allTimeTotal), `${s.allTimeOrders} order${s.allTimeOrders === 1 ? "" : "s"}`),
-        ].join("");
+    if (withDays) {
+      // Day/order caches are keyed by date and id, not by period — drop
+      // them so a refresh can never show an order list that's gone stale
+      // (e.g. delivered from another device since).
+      clearDayCaches();
+      if (!hadDays) {
+        rangeResult.innerHTML = `<div class="skeleton" style="height:56px;margin-bottom:12px;"></div>`.repeat(3);
       }
-      pill.hidden = s.newOrders === 0;
-      pill.textContent = s.newOrders;
-      noteNewOrdersCount(s.newOrders);
-    } catch (err) {
-      if (firstLoad) {
-        grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><p>${Utils.escapeHtml(err.message)}</p></div>`;
-      }
-    } finally {
-      setStatsLoading(false);
     }
+    try {
+      const res = await Api.get(overviewUrl(withDays ? DAYS_FIRST_PAGE : 0));
+      if (seq !== overviewSeq) return false;
+      summaryValid = true;
+      renderSummary(res.summary);
+      if (withDays) {
+        dailyRows = res.days || [];
+        daysHasMore = !!res.hasMore;
+        dailyLoaded = true;
+        renderDays();
+      }
+      return true;
+    } catch (err) {
+      if (seq !== overviewSeq) return false;
+      staleAll = true; // let the next visit try again
+      if (firstLoad) {
+        summaryEl.innerHTML = `<div class="empty-state"><p>${Utils.escapeHtml(err.message)}</p></div>`;
+        lastSnapshot = null;
+      }
+      if (withDays && !hadDays) {
+        rangeResult.innerHTML = `<div class="empty-state"><p>${Utils.escapeHtml(err.message)}</p></div>`;
+      } else if (!firstLoad) {
+        Toast.show(err.message, "error");
+      }
+      return false;
+    } finally {
+      if (seq === overviewSeq) setStatsLoading(false);
+    }
+  }
+
+  // ---- Sub-tabs ----------------------------------------------------------
+  const PANES = ["days", "customers", "items"];
+  let activePane = "days";
+  // A pane is "dirty" when the period (or the underlying orders) may have
+  // changed since it last fetched. Only the visible pane refetches
+  // eagerly; the rest wait until they're opened.
+  const dirty = { days: true, customers: true, items: true };
+
+  const paneRefreshers = {
+    days: () => loadOverview(true),
+    customers: () => window.AdminSalesCustomers?.refresh(),
+    items: () => window.AdminItems?.refresh(),
+  };
+
+  function refreshPane(name) {
+    dirty[name] = false;
+    paneRefreshers[name]();
+  }
+
+  function showPane(name) {
+    activePane = name;
+    subtabs.querySelectorAll(".sales-subtab").forEach((b) => {
+      b.classList.toggle("active", b.dataset.pane === name);
+    });
+    PANES.forEach((p) => {
+      document.getElementById(`salesPane-${p}`).hidden = p !== name;
+    });
+    if (dirty[name]) refreshPane(name);
+  }
+
+  subtabs.addEventListener("click", (e) => {
+    const btn = e.target.closest(".sales-subtab");
+    if (btn) showPane(btn.dataset.pane);
+  });
+
+  /** Re-fetches the header and the visible sub-tab for the selected
+   *  period — what a period change, an import and the background poll
+   *  (while the Sales tab is open) call; opening the tab goes through
+   *  refreshIfNeeded() instead. The visible sub-tab and the header cost
+   *  one request when it's By Day (the overview carries both), otherwise a
+   *  header-only request plus that sub-tab's own. The other sub-tabs are
+   *  only marked dirty. */
+  async function refresh() {
+    staleAll = false;
+    remoteChanged = false;
+    changedDates.clear();
+    loadedAt = Date.now();
+    loadedRangeKey = rangeKey();
+    summaryValid = false;
+    dailyLoaded = false;
+    // Whatever By Customer / By Item kept from their last All load may be
+    // out of date now — drop it so their next refresh asks the server.
+    window.AdminSalesCustomers?.clearCache?.();
+    window.AdminItems?.clearCache?.();
+    PANES.forEach((p) => {
+      dirty[p] = true;
+    });
+    if (activePane === "days") {
+      refreshPane("days");
+      return;
+    }
+    // Another sub-tab is showing: get the header first, so that a status
+    // with zero orders in this period can skip its list request entirely
+    // (see getSelectedCount). If a newer request superseded this one, or
+    // it failed, the list isn't loaded here — the newer request / the
+    // next visit does it.
+    const ok = await loadOverview(false);
+    if (ok && dirty[activePane]) refreshPane(activePane);
+  }
+
+  // ---- By Day ------------------------------------------------------------
+  const DAYS_FIRST_PAGE = 31; // day rows in the first response
+  const DAYS_MORE_PAGE = 62; // day rows per "Show more days" tap — an All-time list can run to hundreds
+  let dailyRows = [];
+  let daysHasMore = false;
+  let loadingMoreDays = false;
+
+  /** The day's numbers for the selected status box, built from the
+   *  per-status parts the server sent — or null when the day has no
+   *  orders of that status (it isn't listed then). */
+  function dayView(day) {
+    const inc = {
+      ALL: [true, true, true],
+      NEW: [true, false, false],
+      DELIVERED: [false, true, false],
+      CANCELLED: [false, false, true],
+    }[statusFilter];
+    const n = inc[0] ? day.newOrders : 0;
+    const d = inc[1] ? day.deliveredOrders : 0;
+    const c = inc[2] ? day.cancelledOrders : 0;
+    if (n + d + c === 0) return null;
+    return {
+      date: day.date,
+      orders: n + d + c,
+      total: (inc[0] ? day.newTotal : 0) + (inc[1] ? day.deliveredTotal : 0) + (inc[2] ? day.cancelledTotal : 0),
+      newOrders: n,
+      deliveredOrders: d,
+      cancelledOrders: c,
+    };
+  }
+
+  function dayGroupHtml(day) {
+    return `
+        <div class="daily-sales-group anim-fade-up">
+          <button type="button" class="daily-sales-head" data-role="day-toggle" data-date="${day.date}">
+            <span class="daily-sales-date"><span class="daily-sales-head-chevron">▸</span>${formatDateHeading(day.date)}</span>
+            <span class="daily-sales-day-total">${Utils.formatMoney(day.total)} · ${day.orders} order${day.orders === 1 ? "" : "s"}${statusFilter === "ALL" ? statusSplit(day.newOrders, day.deliveredOrders, day.cancelledOrders) : ""}</span>
+          </button>
+          <div class="daily-sales-rows" hidden></div>
+        </div>`;
+  }
+
+  /** " · 2 new · 3 delivered · 1 cancelled" — only the parts that aren't
+   *  zero, shown on the All view only. */
+  function statusSplit(newOrders, deliveredOrders, cancelledOrders) {
+    return (newOrders ? ` · ${newOrders} new` : "") +
+      (deliveredOrders ? ` · ${deliveredOrders} delivered` : "") +
+      (cancelledOrders ? ` · ${cancelledOrders} cancelled` : "");
+  }
+
+  function showMoreDaysHtml() {
+    return `<button type="button" class="btn btn-ghost btn-sm show-more-days" id="showMoreDaysBtn">Show more days</button>`;
+  }
+
+  /** Paints the loaded days for the selected status box — purely from
+   *  dailyRows, so changing the box costs no request. */
+  function renderDays() {
+    const views = dailyRows.map(dayView).filter(Boolean);
+    const empty = !views.length
+      ? `<div class="empty-state"><p>No ${statusFilter === "ALL" ? "" : statusLabel() + " "}orders in this period${daysHasMore ? " among the days loaded so far" : ""}.</p></div>`
+      : "";
+    rangeResult.innerHTML =
+      empty +
+      (views.length ? `<div class="daily-sales">${views.map(dayGroupHtml).join("")}</div>` : "") +
+      (daysHasMore ? showMoreDaysHtml() : "");
+  }
+
+  /** "Show more days": asks the server for the next page of older days
+   *  (cursorDay = the oldest day already on screen) and appends it. The
+   *  header isn't touched. Dropped if the period changed meanwhile. */
+  async function showMoreDays() {
+    if (loadingMoreDays || !daysHasMore || !dailyRows.length) return;
+    const btn = document.getElementById("showMoreDaysBtn");
+    const seq = overviewSeq;
+    loadingMoreDays = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Loading…";
+    }
+    try {
+      const res = await Api.get(overviewUrl(DAYS_MORE_PAGE, dailyRows[dailyRows.length - 1].date));
+      if (seq !== overviewSeq) return;
+      const more = res.days || [];
+      dailyRows = dailyRows.concat(more);
+      daysHasMore = !!res.hasMore;
+      // Append just the new days (days already open stay open); fall back
+      // to a full repaint when the list is currently showing the empty note.
+      const container = rangeResult.querySelector(".daily-sales");
+      if (container) {
+        container.insertAdjacentHTML("beforeend", more.map(dayView).filter(Boolean).map(dayGroupHtml).join(""));
+        if (!daysHasMore) btn?.remove();
+      } else {
+        renderDays();
+      }
+    } catch (err) {
+      Toast.show(err.message, "error");
+    } finally {
+      loadingMoreDays = false;
+      if (btn && btn.isConnected) {
+        btn.disabled = false;
+        btn.textContent = "Show more days";
+      }
+    }
+  }
+
+  function statusLabel() {
+    return { NEW: "new", DELIVERED: "delivered", CANCELLED: "cancelled" }[statusFilter] || "";
   }
 
   /** Keeps just the Orders-tab badge live — a single cheap COUNT(*) on
@@ -218,48 +686,40 @@ window.AdminStats = (() => {
   bindWholeBoxOpensPicker(fromInput);
   bindWholeBoxOpensPicker(toInput);
 
-  function selectedRange() {
+  /** Applies whatever is in the custom From/To fields as the period.
+   *  Only reachable while "Custom date" is selected (the fields are
+   *  hidden otherwise). */
+  function applyCustomRange() {
     const from = fromInput.value;
     const to = toInput.value;
-    if (!from || !to) return null;
-    return { from, to };
-  }
-
-  async function applyRange() {
-    const range = selectedRange();
-    if (!range) {
+    if (!from || !to) {
       Toast.show("Pick both a from and to date", "error");
       return;
     }
-    applyBtn.disabled = true;
-    applyBtn.innerHTML = `<span class="spinner"></span>`;
-    try {
-      // Just one request — the daily breakdown already carries each day's
-      // own total and order count, so the range-wide total/count shown in
-      // the card above it is summed from those client-side instead of
-      // asking the backend to compute the same SUM+COUNT a second time.
-      const daily = await Api.get(`/api/admin/orders/summary/range/daily?from=${range.from}&to=${range.to}`);
-      const total = daily.reduce((sum, day) => sum + day.total, 0);
-      const orders = daily.reduce((sum, day) => sum + day.orders, 0);
-      rangeResult.hidden = false;
-      rangeResult.innerHTML =
-        card(`${range.from} → ${range.to}`, Utils.formatMoney(total), `${orders} order${orders === 1 ? "" : "s"}`) +
-        dailyBreakdownHtml(daily);
-      // The Today/Last 7 days/Last 30 days/All time cards are a different,
-      // rolling-window view — once a specific date range is applied, this
-      // range's own result is what matters, so those get out of the way.
-      grid.hidden = true;
-      clearBtn.hidden = false;
-      // "Export filtered" only makes sense once a range is actually
-      // applied — before that there's no filter for it to export.
-      exportFilteredBtn.hidden = false;
-    } catch (err) {
-      Toast.show(err.message, "error");
-    } finally {
-      applyBtn.disabled = false;
-      applyBtn.textContent = "Apply";
+    if (from > to) {
+      Toast.show("From date can't be after To date", "error");
+      return;
     }
+    customRange = { from, to };
+    applyPeriod("custom");
   }
+
+  function applyPeriod(period) {
+    activePeriod = period;
+    refresh();
+  }
+
+  periodSelect.addEventListener("change", () => {
+    const value = periodSelect.value;
+    if (value === "custom") {
+      // Just reveal the From/To fields — nothing changes until Apply, so
+      // the data on screen still matches the period actually applied.
+      customRow.hidden = false;
+      return;
+    }
+    customRow.hidden = true;
+    applyPeriod(value);
+  });
 
   function formatDateHeading(dateStr) {
     // dateStr is a plain "yyyy-MM-dd" — parsed as local midnight (not UTC)
@@ -295,7 +755,10 @@ window.AdminStats = (() => {
       <div class="order-items-list">${itemsSummary(o)}</div>`;
   }
 
-  /** One collapsed row — code, amount, customer, delivered time only.
+  const badgeClass = { NEW: "badge-new", DELIVERED: "badge-delivered", CANCELLED: "badge-cancelled" };
+
+  /** One collapsed row — code, amount, customer, status, and the time that
+   *  status happened (placed / delivered / cancelled).
    *  `row` is the lightweight DailySalesRow the backend sends; its detail
    *  panel starts empty and is filled in on first tap (see the click
    *  listener below). */
@@ -308,39 +771,17 @@ window.AdminStats = (() => {
             <span>${Utils.formatMoney(row.totalAmount)}</span>
           </div>
           <div class="daily-sales-row-sub">
-            <span>${Utils.escapeHtml(row.customerName)}</span>
-            <span>${Utils.formatDateTime(row.deliveredAt)}</span>
+            <span>${Utils.escapeHtml(row.customerName)} <span class="badge ${badgeClass[row.status] || ""}">${Utils.escapeHtml(row.status || "")}</span></span>
+            <span>${Utils.formatDateTime(row.at)}</span>
           </div>
         </button>
         <div class="daily-sales-row-details" hidden></div>
       </div>`;
   }
 
-  /** The applied date range's orders, grouped day by day (newest first) —
-   *  shown under the range total so an admin can see exactly which orders
-   *  make up that total/count instead of just the two numbers. Apply
-   *  itself only ever ships one row per DAY (date/total/count) — a day's
-   *  individual orders are fetched only once an admin taps that day's
-   *  header, and an order's full detail only once they tap that order,
-   *  both via the delegated click listener below. */
-  function dailyBreakdownHtml(daily) {
-    if (!daily || daily.length === 0) {
-      return `<div class="empty-state"><p>No delivered orders in this range.</p></div>`;
-    }
-    return `<div class="daily-sales">
-      ${daily
-        .map(
-          (day) => `
-        <div class="daily-sales-group anim-fade-up">
-          <button type="button" class="daily-sales-head" data-role="day-toggle" data-date="${day.date}">
-            <span class="daily-sales-date"><span class="daily-sales-head-chevron">▸</span>${formatDateHeading(day.date)}</span>
-            <span class="daily-sales-day-total">${Utils.formatMoney(day.total)} · ${day.orders} order${day.orders === 1 ? "" : "s"}</span>
-          </button>
-          <div class="daily-sales-rows" hidden></div>
-        </div>`
-        )
-        .join("")}
-    </div>`;
+  /** A day's cached order rows, filtered to the selected status box. */
+  function dayOrdersHtml(rows) {
+    return rows.filter((r) => statusFilter === "ALL" || r.status === statusFilter).map(orderRowHtml).join("");
   }
 
   // Full order details fetched on tap, keyed by order id, so re-opening a
@@ -368,12 +809,12 @@ window.AdminStats = (() => {
   const dayOrdersCache = new Map();
   const DAY_ORDERS_CACHE_MAX = 60;
 
-  function cacheDayOrders(date, html) {
+  function cacheDayOrders(date, rows) {
     if (dayOrdersCache.size >= DAY_ORDERS_CACHE_MAX) {
       const oldestDate = dayOrdersCache.keys().next().value;
       dayOrdersCache.delete(oldestDate);
     }
-    dayOrdersCache.set(date, html);
+    dayOrdersCache.set(date, rows);
   }
 
   /** Drops every cached "day expanded" order list (and individual order
@@ -390,7 +831,7 @@ window.AdminStats = (() => {
    *  cheap as trying to work out exactly which single day/order was
    *  affected — either refetches lazily, only once something is
    *  actually re-expanded/re-tapped. */
-  function invalidateDayOrdersCache() {
+  function clearDayCaches() {
     dayOrdersCache.clear();
     orderDetailCache.clear();
   }
@@ -403,6 +844,10 @@ window.AdminStats = (() => {
   // total columns for every order in range, so this is the one small
   // extra request per order an admin actually chooses to look at.
   rangeResult.addEventListener("click", async (e) => {
+    if (e.target.closest("#showMoreDaysBtn")) {
+      showMoreDays();
+      return;
+    }
     if (e.target.closest("a")) return; // a tel: link inside an already-open row — dial, don't collapse it
 
     // Level 1: a day header — lazily fetches that single day's lightweight
@@ -416,21 +861,22 @@ window.AdminStats = (() => {
       rowsContainer.hidden = !isOpen;
       if (!isOpen) return;
 
+      // A day's orders are fetched once, for ALL statuses, and cached as
+      // rows; the selected status box just filters them when painting.
       const date = dayToggle.dataset.date;
       if (dayOrdersCache.has(date)) {
-        rowsContainer.innerHTML = dayOrdersCache.get(date);
+        rowsContainer.innerHTML = dayOrdersHtml(dayOrdersCache.get(date));
         return;
       }
 
       rowsContainer.innerHTML = `<div class="daily-sales-row-loading"><span class="spinner spinner-dark"></span> Loading orders…</div>`;
       try {
         const rows = await Api.get(`/api/admin/orders/summary/range/daily/${date}`);
-        const html = rows.map(orderRowHtml).join("");
-        cacheDayOrders(date, html);
+        cacheDayOrders(date, rows);
         // The day may have been collapsed again while this was in flight —
         // don't fill it back in if the admin already closed it.
         if (group.classList.contains("is-open")) {
-          rowsContainer.innerHTML = html;
+          rowsContainer.innerHTML = dayOrdersHtml(rows);
         }
       } catch (err) {
         rowsContainer.innerHTML = `<div class="daily-sales-row-loading">${Utils.escapeHtml(err.message)}</div>`;
@@ -480,18 +926,47 @@ window.AdminStats = (() => {
     URL.revokeObjectURL(url);
   }
 
-  async function exportOrders(useRange) {
-    const range = useRange ? selectedRange() : null;
-    if (useRange && !range) {
-      Toast.show("Pick both a from and to date first, or use Export all", "error");
-      return;
+  // Period + sub-tab + status -> the saved file's name, e.g.
+  // FreshCutz_Today_All_ByItem.xlsx.
+  const PERIOD_SLUGS = { today: "Today", yesterday: "Yesterday", "7d": "Last7Days", "30d": "Last30Days", all: "AllTime" };
+  const PANE_EXPORT = {
+    days: { view: "day", slug: "ByDay" },
+    customers: { view: "customer", slug: "ByCustomer" },
+    items: { view: "item", slug: "ByItem" },
+  };
+  const STATUS_SLUGS = { ALL: "All", NEW: "New", DELIVERED: "Delivered", CANCELLED: "Cancelled" };
+
+  function periodSlug() {
+    if (activePeriod === "custom" && customRange) {
+      return `${customRange.from}_to_${customRange.to}`;
     }
-    const query = range ? `?from=${range.from}&to=${range.to}` : "";
+    return PERIOD_SLUGS[activePeriod] || "AllTime";
+  }
+
+  /** "Export this period" downloads exactly what the open sub-tab shows —
+   *  By Day orders, By Customer customers or By Item items — for the
+   *  selected period and status box, on one sheet. "Export all" ignores
+   *  every filter and downloads every order. */
+  async function exportOrders(useFilters) {
+    let query = "";
+    let filename = "FreshCutz_All_Orders.xlsx";
+    if (useFilters) {
+      const pane = PANE_EXPORT[activePane];
+      const range = getRange();
+      const params = [`view=${pane.view}`, `status=${statusFilter}`];
+      if (range) params.push(`from=${range.from}`, `to=${range.to}`);
+      query = `?${params.join("&")}`;
+      filename = `FreshCutz_${periodSlug()}_${STATUS_SLUGS[statusFilter] || "All"}_${pane.slug}.xlsx`;
+    }
+    const btn = useFilters ? exportFilteredBtn : exportAllBtn;
+    btn.disabled = true;
     try {
-      const { blob, filename } = await Api.downloadBlob(`/api/admin/orders/export${query}`);
+      const { blob } = await Api.downloadBlob(`/api/admin/orders/export${query}`);
       triggerDownload(blob, filename);
     } catch (err) {
       Toast.show(err.message, "error");
+    } finally {
+      btn.disabled = false;
     }
   }
 
@@ -503,6 +978,7 @@ window.AdminStats = (() => {
     try {
       const result = await Api.upload("/api/admin/orders/import", formData);
       const summary = `Updated ${result.updated} order${result.updated === 1 ? "" : "s"}` +
+        (result.unchanged ? `, ${result.unchanged} unchanged` : "") +
         (result.skipped ? `, ${result.skipped} skipped` : "");
       Toast.show(summary, result.skipped ? "error" : "success");
       renderImportResult(result);
@@ -527,33 +1003,16 @@ window.AdminStats = (() => {
       <div class="stat-card anim-fade-up">
         <div class="label">Last import</div>
         <div class="value">${result.updated} updated</div>
+        ${result.unchanged ? `<div class="sub">${result.unchanged} row${result.unchanged === 1 ? "" : "s"} had no changes</div>` : ""}
         ${result.skipped ? `<div class="sub">${result.skipped} row${result.skipped === 1 ? "" : "s"} skipped</div>` : ""}
         ${errorLines ? `<div class="import-errors">${errorLines}</div>` : ""}
       </div>`;
   }
 
-  /** Undoes applyRange(): empties the date pickers, drops the range result
-   *  and its daily breakdown, and brings back the rolling-window cards. */
-  function clearRange() {
-    fromInput.value = "";
-    toInput.value = "";
-    // Setting .value directly (rather than the admin picking a date) does
-    // not fire an "input" event, so the display boxes need re-syncing by
-    // hand, back to their placeholder text.
-    syncDateHint(fromInput, fromHint, "From Date");
-    syncDateHint(toInput, toHint, "To Date");
-    rangeResult.hidden = true;
-    rangeResult.innerHTML = "";
-    grid.hidden = false;
-    clearBtn.hidden = true;
-    exportFilteredBtn.hidden = true;
-  }
-
-  applyBtn.addEventListener("click", applyRange);
-  clearBtn.addEventListener("click", clearRange);
+  applyBtn.addEventListener("click", applyCustomRange);
   exportFilteredBtn.addEventListener("click", () => exportOrders(true));
   exportAllBtn.addEventListener("click", () => exportOrders(false));
   importFile.addEventListener("change", importOrders);
 
-  return { refresh, refreshBadge, adjustNewOrdersCount, setNewOrdersCount, invalidateDayOrdersCache };
+  return { refresh, refreshIfNeeded, noteRemoteChange, onRemoteChange, noteOrderChanged, getSelectedCount, getTotalCount, refreshBadge, adjustNewOrdersCount, setNewOrdersCount, getRange, getStatus };
 })();

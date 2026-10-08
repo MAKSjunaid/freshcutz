@@ -1,7 +1,7 @@
 package com.freshcutz.controller;
 
-import com.freshcutz.dto.DailySalesGroup;
-import com.freshcutz.dto.DailySalesRow;
+import com.freshcutz.dto.DailyOverviewResponse;
+import com.freshcutz.dto.DayOrderRow;
 import com.freshcutz.dto.NewOrdersCountResponse;
 import com.freshcutz.dto.OrderResponse;
 import com.freshcutz.dto.PagedOrdersResponse;
@@ -9,6 +9,7 @@ import com.freshcutz.dto.SalesSummaryResponse;
 import com.freshcutz.entity.OrderStatus;
 import com.freshcutz.service.OrderService;
 import com.freshcutz.service.SalesService;
+import com.freshcutz.service.SalesStatusFilter;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -68,23 +69,35 @@ public class AdminOrderController {
         return salesService.getNewOrdersCount();
     }
 
-    /** One row per calendar day in [from, to] — just the day's total and
-     * order count, NOT its individual orders — backs the Sales tab's
-     * Apply click. (There's no separate plain range-total endpoint: the
-     * range-wide total and count shown above this breakdown are summed
-     * client-side from these per-day totals instead of asking the
-     * database for the same SUM+COUNT a second time.) */
-    @GetMapping("/summary/range/daily")
-    public List<DailySalesGroup> dailyRangeSummary(@RequestParam String from, @RequestParam String to) {
-        return salesService.getDailyRangeSummary(LocalDate.parse(from), LocalDate.parse(to));
+    /** The Sales tab's header (money + status boxes) and one page of the
+     * By Day list in a single response. from/to omitted together is the
+     * All-time period; every day carries all statuses' numbers (the
+     * browser applies the All/New/Delivered/Cancelled selection);
+     * `size` days per page (0 = just
+     * the header); `cursorDay` (yyyy-MM-dd) is the oldest day the client
+     * already holds, omitted for the first page. See
+     * SalesService.getOverview. */
+    @GetMapping("/summary/overview")
+    public DailyOverviewResponse overview(@RequestParam(required = false) String from,
+                                          @RequestParam(required = false) String to,
+                                          @RequestParam(defaultValue = "31") int size,
+                                          @RequestParam(required = false) String cursorDay) {
+        return salesService.getOverview(parseDate(from), parseDate(to), size, cursorDay);
     }
 
-    /** A single day's individual delivered orders, as lightweight rows —
-     * fetched only when an admin expands that day in the Sales tab's
-     * breakdown, not shipped up front for every day in the range. */
+    private LocalDate parseDate(String value) {
+        return (value == null || value.isBlank()) ? null : LocalDate.parse(value);
+    }
+
+    /** A single day's individual orders, as lightweight rows — fetched
+     * only when an admin expands that day in the Sales tab's By Day list,
+     * not shipped up front for every day in the range. `status` is the
+     * same All/New/Delivered/Cancelled filter the day list was built
+     * with (blank means All). */
     @GetMapping("/summary/range/daily/{date}")
-    public List<DailySalesRow> dayOrders(@PathVariable String date) {
-        return salesService.getDayOrders(LocalDate.parse(date));
+    public List<DayOrderRow> dayOrders(@PathVariable String date,
+                                       @RequestParam(required = false) String status) {
+        return salesService.getDayOrders(LocalDate.parse(date), SalesStatusFilter.parse(status));
     }
 
     /** Full detail (address, notes, items) for exactly one order — the
