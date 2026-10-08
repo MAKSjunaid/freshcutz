@@ -6,8 +6,8 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Keeps the customers table's order_count/total_spent/last_order_at
- * columns correct, including for rows that predate those columns (every
+/** Keeps the customers table's order_count/total_spent/delivered_count/
+ * last_order_at columns correct, including for rows that predate those columns (every
  * one of them starts out NULL when Hibernate adds the column to an
  * existing table) and for any phone that has placed orders but has no
  * customers row at all yet (a customer who ordered before the customers
@@ -43,7 +43,7 @@ public class CustomerStatsBackfillRunner implements CommandLineRunner {
     public void run(String... args) {
         int touched = customerRepository.backfillCustomerStats();
         if (touched > 0) {
-            log.info("Recomputed order_count/total_spent/last_order_at for {} customer row(s)", touched);
+            log.info("Recomputed order_count/total_spent/delivered_count/last_order_at for {} customer row(s)", touched);
         }
     }
 }
