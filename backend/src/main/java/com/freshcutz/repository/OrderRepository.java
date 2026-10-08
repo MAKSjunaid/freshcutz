@@ -1,7 +1,6 @@
 package com.freshcutz.repository;
 
 import com.freshcutz.dto.DailySalesRow;
-import com.freshcutz.dto.DailyTotalRow;
 import com.freshcutz.dto.SumCountRow;
 import com.freshcutz.entity.Order;
 import com.freshcutz.entity.OrderStatus;
@@ -199,6 +198,35 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @EntityGraph(attributePaths = "items")
     List<Order> findByPhoneOrderByCreatedAtDesc(String phone);
 
+    /** One customer's orders that fall in a Sales-tab period — the orders
+     * behind a By Customer card's "View past orders". Each order counts
+     * in [from, to) by its own status's date, exactly as the By Customer
+     * totals do (see OrderMixSql): New by createdAt, Delivered by
+     * deliveredAt, Cancelled by statusUpdatedAt. Items fetched in the same
+     * query; newest first. from/to are always real instants here (the
+     * caller substitutes EPOCH / a far-future instant for a missing bound). */
+    @EntityGraph(attributePaths = "items")
+    @Query("SELECT o FROM Order o WHERE o.phone = :phone AND (" +
+            "(o.status = com.freshcutz.entity.OrderStatus.NEW AND o.createdAt >= :from AND o.createdAt < :to) OR " +
+            "(o.status = com.freshcutz.entity.OrderStatus.DELIVERED AND o.deliveredAt >= :from AND o.deliveredAt < :to) OR " +
+            "(o.status = com.freshcutz.entity.OrderStatus.CANCELLED AND o.statusUpdatedAt >= :from AND o.statusUpdatedAt < :to)) " +
+            "ORDER BY o.createdAt DESC")
+    List<Order> findByPhoneInPeriod(@Param("phone") String phone,
+                                    @Param("from") Instant from, @Param("to") Instant to);
+
+    /** Every order that falls in a Sales-tab period, each by its own
+     * status's date (New: createdAt, Delivered: deliveredAt, Cancelled:
+     * statusUpdatedAt — see OrderMixSql), items fetched in the same query,
+     * newest first. Backs "Export this period" on the By Day sub-tab; the
+     * caller narrows it to the selected status box. */
+    @EntityGraph(attributePaths = "items")
+    @Query("SELECT o FROM Order o WHERE " +
+            "(o.status = com.freshcutz.entity.OrderStatus.NEW AND o.createdAt >= :from AND o.createdAt < :to) OR " +
+            "(o.status = com.freshcutz.entity.OrderStatus.DELIVERED AND o.deliveredAt >= :from AND o.deliveredAt < :to) OR " +
+            "(o.status = com.freshcutz.entity.OrderStatus.CANCELLED AND o.statusUpdatedAt >= :from AND o.statusUpdatedAt < :to) " +
+            "ORDER BY o.createdAt DESC")
+    List<Order> findAllInPeriod(@Param("from") Instant from, @Param("to") Instant to);
+
     List<Order> findByCreatedAtGreaterThanEqualAndStatusNot(Instant from, OrderStatus excludedStatus);
 
     @EntityGraph(attributePaths = "items")
@@ -234,29 +262,107 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<DailySalesRow> findDeliveredSummaryBetween(@Param("status") OrderStatus status,
                                                       @Param("from") Instant from, @Param("to") Instant to);
 
-    /** One row per shop-local CALENDAR DAY within [from, to) — just the
-     * day, its total, and its order count — backing the Sales tab's Apply
-     * click. This is a native query (not JPQL) because grouping by a
-     * timezone-local day needs Postgres's own AT TIME ZONE + to_char, which
-     * JPQL has no equivalent for; :zone is the IANA zone id (e.g.
-     * "Asia/Kolkata"), not a Java enum, since it crosses straight into raw
-     * SQL. Doing the grouping here instead of in Java means a date range
-     * spanning thousands of orders costs one small grouped query — as many
-     * rows as there are DAYS in the range, not orders — instead of pulling
-     * every individual order's row over the network just to fold them into
-     * day buckets in the JVM. */
+    /** The Sales tab's whole overview in ONE query: the header numbers for
+     * the period AND one page of the By Day list.
+     *
+     * CTE d groups every order in [from, to) — each by its own status's
+     * date (see OrderMixSql) — into one row per shop-local calendar day,
+     * with per-status counts and amounts. CTE t sums d into the header
+     * (counts per status, delivered money). CTE p is the page of days to
+     * show, newest first, strictly older than :cursorDay (pass
+     * "9999-12-31" for the first page), at most :lim rows. There is no
+     * status filter here on purpose: every day carries all three
+     * statuses' numbers and the browser picks the ones the selected
+     * All/New/Delivered/Cancelled box needs, so switching the box costs no
+     * request. The final SELECT is t LEFT JOIN p ON TRUE so the header comes
+     * back even when the page is empty (lim 0 = header only, which the
+     * other sub-tabs use) — the header columns simply repeat on every
+     * row, and the Java side reads them from the first.
+     *
+     * Columns: 0 new_total, 1 delivered_total, 2 cancelled_total,
+     * 3 delivered_amount, 4 day, 5 n_cnt, 6 d_cnt, 7 c_cnt, 8 n_amt,
+     * 9 d_amt, 10 c_amt (day..c_amt are NULL when there's no page row).
+     * Replaces three separate queries (status counts, delivered
+     * sum+count, daily grouping) that each scanned the same orders. */
     @Query(value =
-            "SELECT to_char(o.delivered_at AT TIME ZONE :zone, 'YYYY-MM-DD') AS day, " +
-            "COALESCE(SUM(o.total_amount), 0) AS total, " +
-            "COUNT(*) AS orders " +
-            "FROM orders o " +
-            "WHERE o.status = :status AND o.delivered_at >= :from AND o.delivered_at < :to " +
-            "GROUP BY day " +
-            "ORDER BY day DESC",
+            "WITH d AS ( " +
+            "  SELECT to_char((" + OrderMixSql.EFFECTIVE_AT + ") AT TIME ZONE :zone, 'YYYY-MM-DD') AS day, " +
+            "         COUNT(*) FILTER (WHERE o.status = 'NEW') AS n_cnt, " +
+            "         COUNT(*) FILTER (WHERE o.status = 'DELIVERED') AS d_cnt, " +
+            "         COUNT(*) FILTER (WHERE o.status = 'CANCELLED') AS c_cnt, " +
+            "         COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'NEW'), 0) AS n_amt, " +
+            "         COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'DELIVERED'), 0) AS d_amt, " +
+            "         COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'CANCELLED'), 0) AS c_amt " +
+            "  FROM orders o " +
+            "  WHERE " + OrderMixSql.PREDICATE_ALL +
+            "  GROUP BY day " +
+            "), t AS ( " +
+            "  SELECT COALESCE(SUM(n_cnt), 0) AS new_total, " +
+            "         COALESCE(SUM(d_cnt), 0) AS delivered_total, " +
+            "         COALESCE(SUM(c_cnt), 0) AS cancelled_total, " +
+            "         COALESCE(SUM(d_amt), 0) AS delivered_amount " +
+            "  FROM d " +
+            "), p AS ( " +
+            "  SELECT day, n_cnt, d_cnt, c_cnt, n_amt, d_amt, c_amt FROM d " +
+            "  WHERE day < :cursorDay " +
+            "  ORDER BY day DESC " +
+            "  LIMIT :lim " +
+            ") " +
+            "SELECT t.new_total, t.delivered_total, t.cancelled_total, t.delivered_amount, " +
+            "       p.day, p.n_cnt, p.d_cnt, p.c_cnt, p.n_amt, p.d_amt, p.c_amt " +
+            "FROM t LEFT JOIN p ON TRUE " +
+            "ORDER BY p.day DESC",
             nativeQuery = true)
-    List<DailyTotalRow> findDailyTotalsBetween(@Param("status") String status,
-                                                @Param("from") Instant from, @Param("to") Instant to,
-                                                @Param("zone") String zone);
+    List<Object[]> findDailyOverview(@Param("from") Instant from, @Param("to") Instant to,
+                                      @Param("zone") String zone,
+                                      @Param("cursorDay") String cursorDay,
+                                      @Param("lim") int lim);
+
+    /** Just the Sales header (New / Delivered / Cancelled counts and the
+     * delivered money) for a bounded [from, to) period — no grouping by
+     * day. Used when only the header is needed (another sub-tab is open),
+     * so the server doesn't build a per-day breakdown nobody will see.
+     * Same numbers as findDailyOverview's header columns: (new_total,
+     * delivered_total, cancelled_total, delivered_amount), one row. */
+    @Query(value =
+            "SELECT COUNT(*) FILTER (WHERE o.status = 'NEW') AS new_total, " +
+            "       COUNT(*) FILTER (WHERE o.status = 'DELIVERED') AS delivered_total, " +
+            "       COUNT(*) FILTER (WHERE o.status = 'CANCELLED') AS cancelled_total, " +
+            "       COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = 'DELIVERED'), 0) AS delivered_amount " +
+            "FROM orders o " +
+            "WHERE " + OrderMixSql.PREDICATE_ALL,
+            nativeQuery = true)
+    List<Object[]> findHeaderBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    /** The same header for the All-time period without touching the bulk
+     * of the orders table: Delivered count and money come from the
+     * running totals kept on customers (delivered_count / total_spent —
+     * see CustomerRepository's rollup and its startup self-healing
+     * backfill), and only the NEW and CANCELLED orders (a small slice of
+     * history, via idx_orders_status_created_at) are counted live. Same
+     * column order as findHeaderBetween. */
+    @Query(value =
+            "SELECT (SELECT COUNT(*) FROM orders WHERE status = 'NEW') AS new_total, " +
+            "       (SELECT COALESCE(SUM(delivered_count), 0) FROM customers) AS delivered_total, " +
+            "       (SELECT COUNT(*) FROM orders WHERE status = 'CANCELLED') AS cancelled_total, " +
+            "       (SELECT COALESCE(SUM(total_spent), 0) FROM customers) AS delivered_amount",
+            nativeQuery = true)
+    List<Object[]> findHeaderAllTime();
+
+    /** The individual orders behind one day of findDailyOverview — pass
+     * that day's [start, end) bounds — newest first, as lightweight
+     * (id, order_code, customer_name, at, total_amount, status) rows. */
+    @Query(value =
+            "SELECT o.id, o.order_code, o.customer_name, (" + OrderMixSql.EFFECTIVE_AT + ") AS happened_at, " +
+            "       o.total_amount, o.status " +
+            "FROM orders o " +
+            "WHERE " + OrderMixSql.PREDICATE +
+            "ORDER BY happened_at DESC, o.id DESC",
+            nativeQuery = true)
+    List<Object[]> findDayOrdersMix(@Param("incNew") boolean incNew,
+                                     @Param("incDelivered") boolean incDelivered,
+                                     @Param("incCancelled") boolean incCancelled,
+                                     @Param("from") Instant from, @Param("to") Instant to);
 
     /** One-time backfill for orders that existed before statusUpdatedAt was
      * introduced — they have NULL there (a brand-new column has no value
