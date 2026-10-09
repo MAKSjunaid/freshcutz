@@ -105,6 +105,7 @@
 
 /* ---- Cart line item ------------------------------------------------- */
 .cart-item {
+  position: relative;
   display: flex;
   gap: var(--sp-3);
   background: var(--bg-card);
@@ -131,6 +132,7 @@
 }
 
 .cart-item-name {
+  padding-right: 30px; /* keeps a long name clear of the trash icon */
   font-size: 13.5px;
   font-weight: 700;
 }
@@ -150,6 +152,27 @@
 .cart-item-price {
   font-weight: 800;
   font-size: 13.5px;
+}
+
+/* Trash icon in the item panel's top-right corner: removes the whole line
+   in one tap, instead of tapping − down from 3 to 2 to 1 to 0. */
+.cart-item-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: rgba(23, 20, 15, 0.06);
+}
+
+.cart-item-delete:active {
+  background: rgba(23, 20, 15, 0.14);
+  color: var(--ink);
 }
 
 .remove-link {
