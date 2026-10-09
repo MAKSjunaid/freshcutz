@@ -94,19 +94,22 @@
           <span class="cart-item-price">${Utils.formatMoney(item.unitPrice * item.quantity)}</span>
         </div>
       </div>
+      <button type="button" class="cart-item-delete" data-action="delete" aria-label="Remove ${Utils.escapeHtml(item.name)} from cart" title="Remove item">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            </button>
     </div>`;
   }
 
   /** Updates one cart-sheet row's qty/price plus the footer total in place,
    *  instead of re-rendering the whole sheet (which replayed the overlay/
    *  sheet entrance animation and caused a visible flash on every tap). */
-  function patchCartRow(sheet, row, product, variant) {
+  function patchCartRow(sheet, row, product, variant, productId = product && product.id) {
     const items = Cart.getItems();
     if (items.length === 0) {
       openCart(); // cart just became empty — layout changes entirely, full re-render is fine here
       return;
     }
-    const qty = Cart.quantityOf(product.id, variant);
+    const qty = Cart.quantityOf(productId, variant);
     if (qty <= 0) {
       row.remove();
     } else {
@@ -145,6 +148,13 @@
       const row = e.target.closest(".cart-item");
       if (!row) return;
       const [productId, variant] = row.dataset.key.split(":");
+      // Trash icon: drop the whole line at once, whatever its quantity (and
+      // even if the product has since left the catalog).
+      if (e.target.closest('[data-action="delete"]')) {
+        Cart.remove(Number(productId), variant);
+        patchCartRow(sheet, row, null, variant, Number(productId));
+        return;
+      }
       const product = window.Storefront.getProduct(Number(productId));
       if (!product) return;
       const current = Cart.quantityOf(Number(productId), variant);
