@@ -9,10 +9,41 @@
   const root = document.getElementById("sheetRoot");
   let currentView = null; // "cart" | "checkout" | "success" | null — which sheet is open right now
 
+  // While any sheet (cart / checkout / success / My Account) is open, the
+  // page behind it must not scroll. overflow:hidden on <body> alone is
+  // ignored by iOS Safari, so the body is pinned in place instead (and the
+  // scroll position restored on close, so the page doesn't jump to the top).
+  let scrollLockY = null;
+
+  function lockPageScroll() {
+    if (scrollLockY !== null) return; // already locked (e.g. cart -> checkout)
+    scrollLockY = window.scrollY || document.documentElement.scrollTop || 0;
+    const b = document.body.style;
+    b.position = "fixed";
+    b.top = `-${scrollLockY}px`;
+    b.left = "0";
+    b.right = "0";
+    b.width = "100%";
+  }
+
+  function unlockPageScroll() {
+    if (scrollLockY === null) return;
+    const y = scrollLockY;
+    scrollLockY = null;
+    const b = document.body.style;
+    b.position = "";
+    b.top = "";
+    b.left = "";
+    b.right = "";
+    b.width = "";
+    window.scrollTo({ top: y, left: 0, behavior: "instant" }); // instant: html has scroll-behavior: smooth
+  }
+
   function closeSheet() {
     currentView = null;
     root.innerHTML = "";
     document.documentElement.style.removeProperty("--toast-sheet-gap");
+    unlockPageScroll();
   }
 
   function renderSheet(bodyHtml, title) {
@@ -22,6 +53,7 @@
     // plus profile.js's, since they all call this same renderSheet) opens
     // clean instead of inheriting the last screen's toast.
     Toast.dismissAll();
+    lockPageScroll();
     root.innerHTML = `
       <div class="overlay" data-role="overlay"></div>
       <div class="sheet" role="dialog" aria-modal="true">
