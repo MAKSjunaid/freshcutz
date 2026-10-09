@@ -88,6 +88,7 @@
 
 .sheet-body {
   overflow-y: auto;
+  overscroll-behavior: contain; /* scrolling past the end of the sheet never moves the page behind it */
   padding: var(--sp-4);
   flex: 1 1 auto;
   display: flex;
