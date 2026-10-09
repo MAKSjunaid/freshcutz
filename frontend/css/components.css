@@ -188,6 +188,8 @@
   background: rgba(15, 13, 9, 0.55);
   backdrop-filter: blur(2px);
   z-index: 800;
+  touch-action: none; /* dragging on the dark backdrop doesn't scroll anything */
+  overscroll-behavior: contain;
   animation: fadeIn var(--dur-med) var(--ease-out) both;
 }
 
