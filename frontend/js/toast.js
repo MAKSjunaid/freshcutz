@@ -1,4 +1,10 @@
-/* Tiny toast notification helper. Call Toast.show("message", "success"|"error"). */
+/* Tiny toast notification helper.
+ *   Toast.show("message", "success"|"error"|"info", durationMs)  — plain text
+ *   Toast.msg("addedToCart", { name }, opts)                      — an admin-editable message
+ * On the customer website the Customize tab decides whether pop-ups appear
+ * at all, for how long, where, how many at once, and each message's wording
+ * (see site-customize.js). The admin pages have no such settings, so there
+ * everything behaves as it always did. */
 
 const Toast = (() => {
   function host() {
@@ -11,7 +17,13 @@ const Toast = (() => {
     return el;
   }
 
-  function show(message, type = "success", duration = 3200) {
+  const settings = () => (window.SiteCustomize && window.SiteCustomize.toastSettings ? window.SiteCustomize.toastSettings() : null);
+
+  function show(message, type = "success", duration, force = false) {
+    const S = settings();
+    if (S && !S.enabled && !force) return;
+    if (duration == null) duration = S ? S.seconds * 1000 : 3200;
+
     const hostEl = host();
     // A cart/checkout/profile sheet renders its markup into #sheetRoot, so
     // a non-empty #sheetRoot means one's currently open — its footer button
@@ -27,6 +39,36 @@ const Toast = (() => {
     hostEl.appendChild(el);
     const timer = setTimeout(() => fadeOut(el), duration);
     el.dataset.timerId = timer; // so dismissAll() can cancel it instead of double-fading
+
+    if (S && S.tap) {
+      el.style.cursor = "pointer";
+      el.addEventListener("click", () => {
+        clearTimeout(timer);
+        fadeOut(el);
+      });
+    }
+
+    // Never more pop-ups at once than the admin allows: the oldest makes room.
+    const max = S ? S.max : 0;
+    if (max) {
+      const live = [...hostEl.querySelectorAll(".toast")].filter((t) => !t.dataset.fading);
+      live.slice(0, Math.max(0, live.length - max)).forEach((old) => {
+        clearTimeout(Number(old.dataset.timerId));
+        fadeOut(old);
+      });
+    }
+  }
+
+  /** An admin-editable message: wording, on/off, duration and style come from
+   * the Customize tab. `vars` fills {placeholders} in the text. */
+  function msg(key, vars, opts = {}) {
+    const SC = window.SiteCustomize;
+    if (!SC || !SC.msg) return;
+    const m = SC.msg(key);
+    if (!m.enabled && !opts.force) return;
+    const text = SC.text(key, vars || {});
+    if (!text) return;
+    show(text, m.tone, m.seconds * 1000, !!opts.force);
   }
 
   function fadeOut(el) {
@@ -51,5 +93,5 @@ const Toast = (() => {
       });
   }
 
-  return { show, dismissAll };
+  return { show, msg, dismissAll };
 })();
