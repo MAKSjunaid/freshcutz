@@ -13,7 +13,7 @@
      bottom UI), while still clearing the safe area on notched devices. */
   bottom: calc(var(--sp-2) + var(--safe-bottom));
   z-index: 700;
-  background: var(--ink);
+  background: var(--site-cartbar-bg, var(--ink));
   color: #fff;
   padding: 12px var(--sp-4);
   display: none;
@@ -34,18 +34,19 @@
 }
 
 .cart-bar-info .count {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--sz-cartbar, 1));
   color: var(--text-on-dark-muted);
 }
 
 .cart-bar-info .total {
-  font-size: 17px;
+  font-size: calc(17px * var(--sz-cartbar, 1));
   font-weight: 800;
   color: var(--gold-light);
 }
 
 .cart-bar .btn {
   flex: 0 0 auto;
+  font-size: calc(14px * var(--sz-cartbar, 1));
 }
 
 /* ---- Panel shell (cart + checkout share this) -------------------------- */

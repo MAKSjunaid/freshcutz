@@ -33,7 +33,7 @@
 
 .search-bar-icon {
   flex: 0 0 auto;
-  font-size: 14px;
+  font-size: calc(14px * var(--sz-search, 1));
   opacity: 0.65;
 }
 
@@ -46,7 +46,7 @@
   /* Mobile Safari/Chrome auto-zoom the page on focus for any text input
      under 16px — 16px is the actual threshold, so that's what's set here
      rather than 15px, which would still trigger the zoom. */
-  font-size: 16px;
+  font-size: max(16px, calc(16px * var(--sz-search, 1)));
   color: var(--text-main);
   padding-right: 26px; /* room for the glossy clear circle */
 }
@@ -146,7 +146,7 @@
 
 .product-media-frame {
   position: relative;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: var(--site-img-ratio-m, 4 / 3);
   background: linear-gradient(135deg, #f1ecdd, #e8e0c9);
   overflow: hidden;
 }
@@ -177,7 +177,7 @@
   left: 12px;
   background: var(--danger);
   color: #fff;
-  font-size: 11px;
+  font-size: calc(11px * var(--sz-pbadge, 1));
   font-weight: 800;
   padding: 5px 11px;
   border-radius: var(--r-pill);
@@ -192,7 +192,7 @@
   left: 12px;
   background: #3a3a3a;
   color: #fff;
-  font-size: 11px;
+  font-size: calc(11px * var(--sz-pbadge, 1));
   font-weight: 800;
   padding: 5px 11px;
   border-radius: var(--r-pill);
@@ -241,14 +241,14 @@
 
 .product-name {
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: calc(18px * var(--sz-pname, 1));
   font-weight: 700;
   color: var(--ink);
   line-height: 1.25;
 }
 
 .product-desc {
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--sz-pdesc, 1));
   color: var(--text-muted);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -264,7 +264,7 @@
 .variant-toggle button {
   flex: 1;
   padding: 9px 6px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--sz-buttons, 1));
   font-weight: 700;
   border-radius: var(--r-pill);
   border: 1.5px solid #e6dcc0;
@@ -276,6 +276,7 @@
 .variant-toggle button.active {
   border-color: var(--gold);
   background: linear-gradient(135deg, rgba(240, 217, 138, 0.35), rgba(201, 161, 59, 0.18));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--gold-light) 35%, transparent), color-mix(in srgb, var(--gold) 18%, transparent));
   color: var(--ink);
   transform: scale(1.03);
 }
@@ -287,13 +288,13 @@
 }
 
 .price-now {
-  font-size: 20px;
+  font-size: calc(20px * var(--sz-price, 1));
   font-weight: 800;
-  color: var(--ink);
+  color: var(--site-price, var(--ink));
 }
 
 .price-mrp {
-  font-size: 13px;
+  font-size: calc(13px * var(--sz-price, 1));
   color: #aaa;
   text-decoration: line-through;
 }
@@ -313,6 +314,9 @@
   color: #fff;
   overflow: hidden;
   flex: 1;
+  /* A set height (rather than "whatever the buttons add up to") so the bar
+     can be made shorter from the Customize tab — the buttons follow it. */
+  height: 40px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -320,9 +324,10 @@
 
 .qty-stepper button {
   width: 40px;
-  height: 40px;
+  height: 100%;
+  flex: 0 0 auto;
   color: #fff;
-  font-size: 18px;
+  font-size: calc(18px * var(--sz-buttons, 1));
   font-weight: 700;
   transition: background var(--dur-fast);
 }
@@ -333,7 +338,7 @@
   flex: 1;
   text-align: center;
   font-weight: 800;
-  font-size: 15px;
+  font-size: calc(15px * var(--sz-buttons, 1));
 }
 
 .qty-stepper .qty-value.pulse {
@@ -347,7 +352,7 @@
   background: linear-gradient(135deg, var(--gold-light), var(--gold) 65%, var(--gold-dark));
   color: var(--ink);
   font-weight: 800;
-  font-size: 14px;
+  font-size: calc(14px * var(--sz-buttons, 1));
   min-height: 44px;
   box-shadow: var(--shadow-gold);
   letter-spacing: 0.01em;
@@ -368,7 +373,7 @@
 /* ---- Responsive scale-up: multi-column from tablet width up -------------- */
 @media (min-width: 620px) {
   .product-grid { grid-template-columns: repeat(2, 1fr); }
-  .product-media-frame { aspect-ratio: 1 / 1; }
+  .product-media-frame { aspect-ratio: var(--site-img-ratio-d, 1 / 1); }
 }
 
 @media (min-width: 900px) {

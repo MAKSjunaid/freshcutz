@@ -29,8 +29,8 @@
 }
 
 @keyframes pulseGold {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 161, 59, 0.45); }
-  50% { box-shadow: 0 0 0 8px rgba(201, 161, 59, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold) 45%, transparent); }
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--gold) 0%, transparent); }
 }
 
 @keyframes shimmer {

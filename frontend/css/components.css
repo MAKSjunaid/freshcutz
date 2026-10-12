@@ -11,7 +11,7 @@
   padding: 12px 20px;
   border-radius: var(--r-pill);
   font-weight: 700;
-  font-size: 14px;
+  font-size: calc(14px * var(--sz-buttons, 1));
   white-space: nowrap;
   transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), opacity var(--dur-fast);
   min-height: 44px;
@@ -33,7 +33,10 @@
   box-shadow: var(--shadow-gold);
 }
 
-.btn-gold:hover { box-shadow: 0 10px 26px rgba(201, 161, 59, 0.45); }
+.btn-gold:hover {
+  box-shadow: 0 10px 26px rgba(201, 161, 59, 0.45);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--gold) 45%, transparent);
+}
 
 .btn-dark {
   background: var(--ink);
@@ -118,6 +121,7 @@
   outline: none;
   border-color: var(--gold);
   box-shadow: 0 0 0 3px rgba(201, 161, 59, 0.2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 20%, transparent);
 }
 
 .field .hint {
@@ -149,8 +153,20 @@
   gap: 8px;
   width: min(92vw, 380px);
   pointer-events: none;
+  /* admin-set nudge from the Customize tab (--toast-dx / --toast-dy) */
+  translate: var(--toast-dx, 0px) var(--toast-dy, 0px);
   transition: bottom var(--dur-fast) var(--ease-out), top var(--dur-fast) var(--ease-out);
 }
+
+/* Position chosen in the Customize tab (set by site-customize.js as
+   data-pos; "auto" leaves no attribute and keeps the original spot). */
+#toastHost[data-pos^="top"],
+#toastHost[data-pos="middle-center"] { bottom: auto !important; }
+#toastHost[data-pos^="top"] { top: calc(var(--safe-top) + 14px); }
+#toastHost[data-pos="middle-center"] { top: 50%; transform: translate(-50%, -50%); }
+#toastHost[data-pos$="left"] { left: 14px; right: auto; transform: none; }
+#toastHost[data-pos$="right"] { right: 14px; left: auto; transform: none; }
+#toastHost[data-pos$="center"]:not([data-pos="middle-center"]) { left: 50%; right: auto; transform: translateX(-50%); }
 
 /* A cart/checkout/profile sheet is open (see toast.js — it checks
    #sheetRoot) — float the toast just above that sheet's own top edge
@@ -180,6 +196,7 @@
 
 .toast.success { border-left: 4px solid var(--success); }
 .toast.error { border-left: 4px solid var(--danger); }
+.toast.info { border-left: 4px solid var(--info); }
 
 /* Modal / overlay */
 .overlay {
