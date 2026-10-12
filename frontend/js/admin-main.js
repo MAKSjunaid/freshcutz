@@ -29,6 +29,7 @@
     // AdminStats.refreshIfNeeded — so flipping back and forth costs nothing.
     if (viewName === "stats" && window.AdminStats) window.AdminStats.refreshIfNeeded();
     if (viewName === "customers" && window.AdminCustomers) window.AdminCustomers.refresh();
+    if (viewName === "customize" && window.AdminCustomize) window.AdminCustomize.refresh();
   }
 
   tabs.forEach((tab) => tab.addEventListener("click", () => switchTo(tab.dataset.view)));

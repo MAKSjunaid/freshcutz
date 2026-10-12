@@ -41,7 +41,7 @@ window.CheckoutForm = (() => {
         </div>
       </form>
       <div class="sheet-footer">
-        <button class="btn btn-gold btn-block" id="contactNextBtn" form="contactForm">Next →</button>
+        <button class="btn btn-gold btn-block" id="contactNextBtn" form="contactForm">${SiteCustomize.html("nextButtonText")}</button>
       </div>`;
 
     const sheet = S.renderSheet(body, "Your Details");
@@ -52,8 +52,8 @@ window.CheckoutForm = (() => {
       e.preventDefault();
       const data = new FormData(form);
       const errors = {};
-      if (!data.get("customerName")?.trim()) errors.customerName = "Please enter your name";
-      if (!Utils.validatePhone(data.get("phone"))) errors.phone = "Enter a valid 10-digit phone number";
+      if (!data.get("customerName")?.trim()) errors.customerName = SiteCustomize.text("errName");
+      if (!Utils.validatePhone(data.get("phone"))) errors.phone = SiteCustomize.text("errPhone");
       if (Object.keys(errors).length > 0) {
         showErrors(sheet, errors);
         return;
@@ -81,13 +81,22 @@ window.CheckoutForm = (() => {
     return !!(prefill && prefill.flatNo?.trim() && prefill.addressLine?.trim());
   }
 
+  /** The "special instructions" box — the admin can rename or hide it. */
+  function notesFieldHtml() {
+    if (!SiteCustomize.on("showNotesField")) return "";
+    return `<div class="field">
+          <label for="cf-notes">${Utils.escapeHtml(SiteCustomize.t("notesLabel"))}</label>
+          <textarea id="cf-notes" name="notes" rows="2" placeholder="e.g. Call before delivering"></textarea>
+        </div>`;
+  }
+
   function checkoutFooterHtml() {
     return `
       <div class="sheet-footer">
-        <div class="summary-row"><span>Items</span><span>${Cart.getLineCount()}</span></div>
-        <div class="summary-row total"><span>Total (Cash on Delivery)</span><span>${Utils.formatMoney(Cart.getTotal())}</span></div>
+        <div class="summary-row"><span>${SiteCustomize.html("itemsLabel")}</span><span>${Cart.getLineCount()}</span></div>
+        <div class="summary-row total"><span>${SiteCustomize.html("codTotalLabel")}</span><span>${Utils.formatMoney(Cart.getTotal())}</span></div>
         <button class="btn btn-gold btn-block" style="margin-top:10px;" id="placeOrderBtn" form="checkoutForm">
-          Place Order
+          ${Utils.escapeHtml(SiteCustomize.t("placeOrderText"))}
         </button>
       </div>`;
   }
@@ -111,7 +120,7 @@ window.CheckoutForm = (() => {
   async function openFinalStep(phone) {
     const S = window.CheckoutSheet;
     S.renderSheet(
-      `<div class="sheet-body"><div class="empty-state"><div class="icon">🛒</div><p>Loading your details…</p></div></div>`,
+      `<div class="sheet-body"><div class="empty-state"><div class="icon">🛒</div><p>${SiteCustomize.html("loadingDetailsText")}</p></div></div>`,
       "Final Step"
     );
 
@@ -149,10 +158,10 @@ window.CheckoutForm = (() => {
       .join("");
     return `
       <div class="field">
-        <label>Items</label>
+        <label>${SiteCustomize.html("itemsLabel")}</label>
         <div class="order-summary-list">
           ${rows}
-          <div class="summary-row total"><span>Total</span><span>${Utils.formatMoney(Cart.getTotal())}</span></div>
+          <div class="summary-row total"><span>${SiteCustomize.html("totalLabel")}</span><span>${Utils.formatMoney(Cart.getTotal())}</span></div>
         </div>
       </div>`;
   }
@@ -183,17 +192,14 @@ window.CheckoutForm = (() => {
         ${backButtonHtml}
         <div class="address-summary-card">
           <div class="address-summary-row">🏠 ${Utils.escapeHtml(prefill.flatNo)}, ${Utils.escapeHtml(prefill.addressLine)}</div>
-          ${prefill.landmark ? `<div class="address-summary-row">📍 ${Utils.escapeHtml(prefill.landmark)}</div>` : ""}
+          ${prefill.landmark && SiteCustomize.on("showLandmarkField") ? `<div class="address-summary-row">📍 ${Utils.escapeHtml(prefill.landmark)}</div>` : ""}
           <button type="button" class="btn btn-ghost btn-sm" data-role="edit-address" style="margin-top:var(--sp-2);">✏️ Change address</button>
         </div>
         <input type="hidden" name="flatNo" value="${Utils.escapeHtml(prefill.flatNo)}" />
         <input type="hidden" name="addressLine" value="${Utils.escapeHtml(prefill.addressLine)}" />
         <input type="hidden" name="landmark" value="${Utils.escapeHtml(prefill.landmark || "")}" />
         ${cartItemsSectionHtml()}
-        <div class="field">
-          <label for="cf-notes">Special instructions (optional)</label>
-          <textarea id="cf-notes" name="notes" rows="2" placeholder="e.g. Call before delivering"></textarea>
-        </div>
+        ${notesFieldHtml()}
       </form>
       ${checkoutFooterHtml()}`;
 
@@ -241,14 +247,15 @@ window.CheckoutForm = (() => {
           <textarea id="cf-address" name="addressLine" rows="2" required placeholder="Building, street, area">${Utils.escapeHtml(prefill?.addressLine || "")}</textarea>
           <div class="error" data-err="addressLine"></div>
         </div>
-        <div class="field">
+        ${
+          SiteCustomize.on("showLandmarkField")
+            ? `<div class="field">
           <label for="cf-landmark">Landmark (optional)</label>
           <input id="cf-landmark" name="landmark" placeholder="e.g. Near XYZ apartments" value="${Utils.escapeHtml(prefill?.landmark || "")}" />
-        </div>
-        <div class="field">
-          <label for="cf-notes">Special instructions (optional)</label>
-          <textarea id="cf-notes" name="notes" rows="2" placeholder="e.g. Call before delivering"></textarea>
-        </div>
+        </div>`
+            : `<input type="hidden" name="landmark" value="${Utils.escapeHtml(prefill?.landmark || "")}" />`
+        }
+        ${notesFieldHtml()}
       </form>
       ${checkoutFooterHtml()}`;
 
@@ -282,8 +289,8 @@ window.CheckoutForm = (() => {
   function validateDelivery(form) {
     const errors = {};
     const data = new FormData(form);
-    if (!data.get("flatNo")?.trim()) errors.flatNo = "Please enter your flat / house no.";
-    if (!data.get("addressLine")?.trim()) errors.addressLine = "Please enter your address";
+    if (!data.get("flatNo")?.trim()) errors.flatNo = SiteCustomize.text("errFlat");
+    if (!data.get("addressLine")?.trim()) errors.addressLine = SiteCustomize.text("errAddress");
     return errors;
   }
 
@@ -310,7 +317,7 @@ window.CheckoutForm = (() => {
     };
 
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner"></span> Placing order...`;
+    btn.innerHTML = `<span class="spinner"></span> ${SiteCustomize.html("placingOrderText")}`;
     try {
       const order = await Api.post("/api/orders", payload);
       Cart.clear();
@@ -321,9 +328,9 @@ window.CheckoutForm = (() => {
       window.ProfileSheet && window.ProfileSheet.savePhone(phone);
       window.CheckoutSheet.openSuccess(order);
     } catch (err) {
-      Toast.show(err.message, "error");
+      Toast.msg("serverError", { message: err.message });
       btn.disabled = false;
-      btn.textContent = "Place Order";
+      btn.textContent = SiteCustomize.t("placeOrderText");
     }
   }
 

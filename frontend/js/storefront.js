@@ -38,7 +38,8 @@
 
   function init() {
     const phone = (window.FRESHCUTZ_WHATSAPP || "").replace(/\D/g, "");
-    whatsappLink.href = `https://wa.me/${phone}`;
+    // An admin-set number (see site-customize.js) wins over the config.js default.
+    if (!whatsappLink.dataset.custom) whatsappLink.href = `https://wa.me/${phone}`;
     Cart.onChange(syncAllCardQuantities);
     Cart.onChange(updateCartBadges);
     // No fetch here on purpose. The catalog now loads from a single
@@ -115,8 +116,8 @@
     );
     emptyState.hidden = visible.length > 0;
     emptyState.querySelector("p").textContent = searchTerm
-      ? "We checked the whole farm. Nothing matched!"
-      : "No products available right now. Please check back soon.";
+      ? SiteCustomize.t("noSearchResultsText")
+      : SiteCustomize.t("emptyProductsText");
     grid.innerHTML = visible.map((p, i) => renderCard(p, i)).join("");
     grid.querySelectorAll(".product-card").forEach((el) => revealObserver.observe(el));
   }
@@ -126,11 +127,11 @@
    * stock change can just swap this one piece (see storefront-sync.js). */
   function footerHtml(p, variant) {
     if (p.outOfStock) {
-      return `<button class="add-btn out-of-stock-btn" disabled>Out of Stock</button>`;
+      return `<button class="add-btn out-of-stock-btn" disabled>${Utils.escapeHtml(SiteCustomize.t("outOfStockText"))}</button>`;
     }
     const qty = Cart.quantityOf(p.id, variant);
     return `
-      <button class="add-btn ${qty > 0 ? "hide" : ""}" data-action="add">Add to cart</button>
+      <button class="add-btn ${qty > 0 ? "hide" : ""}" data-action="add">${Utils.escapeHtml(SiteCustomize.t("addToCartText"))}</button>
       <div class="qty-stepper ${qty > 0 ? "show" : ""}">
         <button data-action="dec" aria-label="Decrease">−</button>
         <span class="qty-value">${qty}</span>
@@ -152,7 +153,7 @@
         <div class="product-media-frame">
           <img src="${img}" alt="${Utils.escapeHtml(p.name)}" loading="lazy" onerror="this.style.opacity=0" />
           <span class="discount-badge" ${discount > 0 && !p.outOfStock ? "" : "hidden"}>${discount}% OFF</span>
-          <span class="out-of-stock-badge" ${p.outOfStock ? "" : "hidden"}>Out of Stock</span>
+          <span class="out-of-stock-badge" ${p.outOfStock ? "" : "hidden"}>${Utils.escapeHtml(SiteCustomize.t("outOfStockText"))}</span>
         </div>
       </div>
       <div class="product-body">
@@ -273,7 +274,7 @@
       const variant = cardVariant[productId] || "variant1";
       Cart.setQuantity(product, variant, 1);
       patchQtyUI(card, productId, variant, true);
-      Toast.show(`${product.name} added to cart`, "success");
+      Toast.msg("addedToCart", { name: product.name });
     } else if (incBtn) {
       const variant = cardVariant[productId] || "variant1";
       Cart.setQuantity(product, variant, Cart.quantityOf(productId, variant) + 1);
@@ -318,6 +319,22 @@
       emptyState.querySelector("p").textContent = message;
     },
   };
+
+  /* The admin changed something in the Customize tab: redraw the pieces that
+   * carry admin-set wording (Add button, out-of-stock label, empty message),
+   * and drop a category/search filter that the admin just hid. Skipped
+   * until the first catalog has arrived, so it can't flash "no products". */
+  document.addEventListener("freshcutz:site", () => {
+    if (!SiteCustomize.on("showSearch") && searchTerm) {
+      searchTerm = "";
+      searchInput.value = "";
+    }
+    if (!SiteCustomize.on("showCategories") && activeCategory !== "All") {
+      activeCategory = "All";
+      if (allProducts.length) renderCategories();
+    }
+    if (allProducts.length) renderGrid();
+  });
 
   document.addEventListener("DOMContentLoaded", init);
 })();

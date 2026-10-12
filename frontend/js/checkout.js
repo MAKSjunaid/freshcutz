@@ -126,8 +126,8 @@
     const items = Cart.getItems();
     if (items.length === 0) {
       renderSheet(
-        `<div class="sheet-body"><div class="empty-state"><div class="icon">🛒</div><p>Your cart is empty. Add something delicious!</p></div></div>`,
-        "Your Cart"
+        `<div class="sheet-body"><div class="empty-state"><div class="icon">🛒</div><p>${Utils.escapeHtml(SiteCustomize.t("cartEmptyText"))}</p></div></div>`,
+        Utils.escapeHtml(SiteCustomize.t("cartTitle"))
       );
       return;
     }
@@ -135,14 +135,14 @@
     const body = `
       <div class="sheet-body">${items.map(cartItemHtml).join("")}</div>
       <div class="sheet-footer">
-        <div class="summary-row total"><span>Total</span><span>${Utils.formatMoney(Cart.getTotal())}</span></div>
-        <button class="btn btn-gold btn-block" style="margin-top:10px;" data-role="checkout-btn">Proceed to Checkout →</button>
+        <div class="summary-row total"><span>${SiteCustomize.html("totalLabel")}</span><span>${Utils.formatMoney(Cart.getTotal())}</span></div>
+        <button class="btn btn-gold btn-block" style="margin-top:10px;" data-role="checkout-btn">${Utils.escapeHtml(SiteCustomize.t("checkoutButtonText"))}</button>
         <div style="text-align:center;margin-top:8px;">
-          <button class="btn btn-ghost btn-sm" data-role="clear-btn">Clear cart</button>
+          <button class="btn btn-ghost btn-sm" data-role="clear-btn">${SiteCustomize.html("clearCartText")}</button>
         </div>
       </div>`;
 
-    const sheet = renderSheet(body, "Your Cart");
+    const sheet = renderSheet(body, Utils.escapeHtml(SiteCustomize.t("cartTitle")));
 
     sheet.querySelector(".sheet-body").addEventListener("click", (e) => {
       const row = e.target.closest(".cart-item");
@@ -181,7 +181,7 @@
     if (window.StoreStatus && !window.StoreStatus.isOnline()) {
       currentView = "checkout";
       renderSheet(
-        `<div class="sheet-body"><div class="empty-state"><div class="icon">🔴</div><p>We're currently offline and not accepting new orders. Please check back soon!</p></div></div>`,
+        `<div class="sheet-body"><div class="empty-state"><div class="icon">🔴</div><p>${Utils.escapeHtml(SiteCustomize.t("offlineSheetText"))}</p></div></div>`,
         "Store Offline"
       );
       return;
@@ -212,12 +212,12 @@
       )
       .join("");
     const notes = order.notes
-      ? `<div class="order-notes"><span class="order-notes-label">Your note:</span> ${Utils.escapeHtml(order.notes)}</div>`
+      ? `<div class="order-notes"><span class="order-notes-label">${SiteCustomize.html("yourNoteLabel")}</span> ${Utils.escapeHtml(order.notes)}</div>`
       : "";
     return `
       <div class="order-summary-list">
         ${rows}
-        <div class="summary-row total"><span>Total</span><span>${Utils.formatMoney(order.totalAmount)}</span></div>
+        <div class="summary-row total"><span>${SiteCustomize.html("totalLabel")}</span><span>${Utils.formatMoney(order.totalAmount)}</span></div>
         ${notes}
       </div>`;
   }
@@ -228,16 +228,16 @@
       <div class="sheet-body">
         <div class="order-success">
           <div class="success-check">✓</div>
-          <h2 class="anim-fade-up" style="animation-delay:120ms;">Order Placed!</h2>
-          <p class="anim-fade-up" style="animation-delay:180ms;color:var(--text-muted);margin-top:6px;">We'll call you to confirm delivery timing.</p>
+          <h2 class="anim-fade-up" style="animation-delay:120ms;">${Utils.escapeHtml(SiteCustomize.t("successTitle"))}</h2>
+          ${SiteCustomize.on("showSuccessMessage") && SiteCustomize.t("successMessage") ? `<p class="anim-fade-up" style="animation-delay:180ms;color:var(--text-muted);margin-top:6px;">${Utils.escapeHtml(SiteCustomize.t("successMessage"))}</p>` : ""}
           <div class="order-id-chip anim-fade-up" style="animation-delay:240ms;">
-            <span class="order-id-label">Order ID:</span>
+            <span class="order-id-label">${SiteCustomize.html("orderIdLabel")}</span>
             <span class="order-id-value">${Utils.escapeHtml(order.orderCode)}</span>
           </div>
         </div>
         <div class="anim-fade-up" style="animation-delay:300ms;">${orderSummaryHtml(order)}</div>
-        <p class="screenshot-hint anim-fade-up" style="animation-delay:360ms;">📸 Take a screenshot of this page to keep for your reference.</p>
-        <button class="btn btn-dark btn-block anim-fade-up" style="animation-delay:420ms;margin-top:var(--sp-3);" data-role="continue">Continue Shopping</button>
+        ${SiteCustomize.on("showScreenshotHint") ? `<p class="screenshot-hint anim-fade-up" style="animation-delay:360ms;">${SiteCustomize.html("screenshotHintText")}</p>` : ""}
+        <button class="btn btn-dark btn-block anim-fade-up" style="animation-delay:420ms;margin-top:var(--sp-3);" data-role="continue">${SiteCustomize.html("continueShoppingText")}</button>
       </div>`;
     const sheet = renderSheet(body, "");
     sheet.querySelector(".sheet-header h2").parentElement.style.borderBottom = "none";
@@ -255,7 +255,7 @@
    * Let them know, and if they're looking at the cart or mid-checkout,
    * refresh what they see so they're never confirming stale details. */
   Cart.onCatalogSync(({ removedNames }) => {
-    removedNames.forEach((name) => Toast.show(`${name} was removed from your cart — no longer available`, "error"));
+    removedNames.forEach((name) => Toast.msg("itemRemoved", { name }));
     if (currentView === "cart" || currentView === "checkout") {
       openCart();
     }

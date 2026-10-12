@@ -1,6 +1,7 @@
 package com.freshcutz.service;
 
 import com.freshcutz.dto.ProductResponse;
+import com.freshcutz.dto.SiteResponse;
 import com.freshcutz.dto.StoreStatusResponse;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class SseBroadcastService {
 
     private final List<SseEmitter> productEmitters = new CopyOnWriteArrayList<>();
     private final List<SseEmitter> statusEmitters = new CopyOnWriteArrayList<>();
+    private final List<SseEmitter> siteEmitters = new CopyOnWriteArrayList<>();
 
     /** Registers a new subscriber and immediately sends it the current
      * catalog, so a tab that just connected does not have to wait for the
@@ -49,6 +51,21 @@ public class SseBroadcastService {
         SseEmitter emitter = register(statusEmitters);
         send(emitter, "status", initial, statusEmitters);
         return emitter;
+    }
+
+    /** Same idea again, for the customer website's look (the admin's
+     * Customize tab): a tab gets the current settings on connect and a
+     * fresh copy whenever an admin saves a change. */
+    public SseEmitter subscribeSite(SiteResponse initial) {
+        SseEmitter emitter = register(siteEmitters);
+        send(emitter, "site", initial, siteEmitters);
+        return emitter;
+    }
+
+    public void broadcastSite(SiteResponse site) {
+        for (SseEmitter emitter : siteEmitters) {
+            send(emitter, "site", site, siteEmitters);
+        }
     }
 
     public void broadcastProducts(List<ProductResponse> products) {
@@ -74,6 +91,9 @@ public class SseBroadcastService {
         }
         for (SseEmitter emitter : statusEmitters) {
             sendComment(emitter, statusEmitters);
+        }
+        for (SseEmitter emitter : siteEmitters) {
+            sendComment(emitter, siteEmitters);
         }
     }
 

@@ -63,7 +63,7 @@ window.ProfileSheet = (() => {
         </div>
       </form>
       <div class="sheet-footer">
-        <button class="btn btn-gold btn-block" id="profileLoginBtn" form="profileLoginForm">Login</button>
+        <button class="btn btn-gold btn-block" id="profileLoginBtn" form="profileLoginForm">${SiteCustomize.html("loginButtonText")}</button>
       </div>`;
 
     const sheet = S.renderSheet(body, "My Account");
@@ -88,7 +88,7 @@ window.ProfileSheet = (() => {
       } catch (err) {
         btn.disabled = false;
         btn.textContent = "Login";
-        Toast.show(err.message, "error");
+        Toast.msg("serverError", { message: err.message });
         return;
       }
 
@@ -108,7 +108,7 @@ window.ProfileSheet = (() => {
   async function openProfile(phone) {
     const S = window.CheckoutSheet;
     S.renderSheet(
-      `<div class="sheet-body"><div class="empty-state"><div class="icon">👤</div><p>Loading your account…</p></div></div>`,
+      `<div class="sheet-body"><div class="empty-state"><div class="icon">👤</div><p>${SiteCustomize.html("loadingAccountText")}</p></div></div>`,
       "My Account"
     );
 
@@ -116,7 +116,7 @@ window.ProfileSheet = (() => {
     try {
       profile = await Api.get(`/api/customers/lookup?phone=${encodeURIComponent(phone)}`);
     } catch (err) {
-      Toast.show(err.message, "error");
+      Toast.msg("serverError", { message: err.message });
       profile = null;
     }
 
@@ -135,7 +135,7 @@ window.ProfileSheet = (() => {
     return `
       <div class="address-summary-card">
         <div class="address-summary-row">🏠 ${Utils.escapeHtml(profile.flatNo)}, ${Utils.escapeHtml(profile.addressLine)}</div>
-        ${profile.landmark ? `<div class="address-summary-row">📍 ${Utils.escapeHtml(profile.landmark)}</div>` : ""}
+        ${profile.landmark && SiteCustomize.on("showLandmarkField") ? `<div class="address-summary-row">📍 ${Utils.escapeHtml(profile.landmark)}</div>` : ""}
         <button type="button" class="btn btn-ghost btn-sm" data-role="edit-address" style="margin-top:var(--sp-2);">✏️ Update name &amp; address</button>
       </div>`;
   }
@@ -144,10 +144,10 @@ window.ProfileSheet = (() => {
     const S = window.CheckoutSheet;
     const body = `
       <div class="sheet-body">
-        <h3 style="margin:0;font-size:14px;">My Address</h3>
+        <h3 style="margin:0;font-size:14px;">${SiteCustomize.html("myAddressTitle")}</h3>
         ${addressSummaryHtml(profile)}
-        <button type="button" class="btn btn-ghost btn-block" data-role="logout">Logout</button>
-        <h3 style="margin-top:var(--sp-2);margin-bottom:0;font-size:14px;">My Orders</h3>
+        <button type="button" class="btn btn-ghost btn-block" data-role="logout">${SiteCustomize.html("logoutButtonText")}</button>
+        <h3 style="margin-top:var(--sp-2);margin-bottom:0;font-size:14px;">${SiteCustomize.html("myOrdersTitle")}</h3>
         <div id="profileOrdersList"></div>
       </div>`;
 
@@ -159,7 +159,7 @@ window.ProfileSheet = (() => {
     sheet.querySelector('[data-role="logout"]').addEventListener("click", () => {
       clearPhone();
       S.closeSheet();
-      Toast.show("Logged out", "success");
+      Toast.msg("loggedOut");
     });
 
     loadOrders(phone, sheet.querySelector("#profileOrdersList"));
@@ -171,7 +171,7 @@ window.ProfileSheet = (() => {
       const orders = await Api.get(`/api/customers/orders?phone=${encodeURIComponent(phone)}`);
       container.innerHTML = orders.length
         ? orders.map(orderCardHtml).join("")
-        : `<div class="empty-state"><p>No orders yet.</p></div>`;
+        : `<div class="empty-state"><p>${SiteCustomize.html("noOrdersText")}</p></div>`;
       container.querySelectorAll('[data-action="reorder"]').forEach((btn) => {
         btn.addEventListener("click", () => {
           const order = orders.find((o) => o.orderCode === btn.dataset.orderCode);
@@ -225,13 +225,13 @@ window.ProfileSheet = (() => {
         Cart.setQuantity(product, variant, quantity);
       });
       window.CheckoutSheet.openCart();
-      Toast.show("Good choices deserve a repeat! 😍 Added to your cart.", "success");
+      Toast.msg("reorderAdded");
     }
     if (unavailable.length > 0) {
-      Toast.show(
-        `${unavailable.join(", ")} ${unavailable.length === 1 ? "is" : "are"} currently unavailable and couldn't be added`,
-        "error"
-      );
+      Toast.msg("reorderUnavailable", {
+        names: unavailable.join(", "),
+        isAre: unavailable.length === 1 ? "is" : "are",
+      });
     }
   }
 
@@ -249,7 +249,7 @@ window.ProfileSheet = (() => {
     <div class="profile-order-card">
       <div class="profile-order-head">
         <div>
-          <div class="profile-order-code">Order ID: ${Utils.escapeHtml(order.orderCode)}</div>
+          <div class="profile-order-code">${SiteCustomize.html("orderIdLabel")} ${Utils.escapeHtml(order.orderCode)}</div>
           <div class="profile-order-time">${Utils.formatDateTime(order.createdAt)}</div>
         </div>
         <span class="badge ${badgeClass[order.status] || ""}">${order.status}</span>
@@ -260,14 +260,14 @@ window.ProfileSheet = (() => {
         ${order.notes ? `<br/>📝 ${Utils.escapeHtml(order.notes)}` : ""}
       </div>
       <div class="profile-order-items">${orderItemsHtml(order)}</div>
-      <div class="profile-order-total"><span>Total</span><span>${Utils.formatMoney(order.totalAmount)}</span></div>
+      <div class="profile-order-total"><span>${SiteCustomize.html("totalLabel")}</span><span>${Utils.formatMoney(order.totalAmount)}</span></div>
       <button
         type="button"
         class="btn btn-gold btn-sm btn-block"
         style="margin-top:8px;"
         data-action="reorder"
         data-order-code="${Utils.escapeHtml(order.orderCode)}"
-      >↺ Reorder</button>
+      >${SiteCustomize.html("reorderButtonText")}</button>
     </div>`;
   }
 
@@ -291,13 +291,17 @@ window.ProfileSheet = (() => {
           <textarea id="pf-address" name="addressLine" rows="2" required>${Utils.escapeHtml(profile.addressLine || "")}</textarea>
           <div class="error" data-err="addressLine"></div>
         </div>
-        <div class="field">
+        ${
+          SiteCustomize.on("showLandmarkField")
+            ? `<div class="field">
           <label for="pf-landmark">Landmark (optional)</label>
           <input id="pf-landmark" name="landmark" value="${Utils.escapeHtml(profile.landmark || "")}" />
-        </div>
+        </div>`
+            : `<input type="hidden" name="landmark" value="${Utils.escapeHtml(profile.landmark || "")}" />`
+        }
       </form>
       <div class="sheet-footer">
-        <button class="btn btn-gold btn-block" id="pfSaveBtn" form="profileAddressForm">Update Details</button>
+        <button class="btn btn-gold btn-block" id="pfSaveBtn" form="profileAddressForm">${SiteCustomize.html("updateDetailsText")}</button>
       </div>`;
 
     const sheet = S.renderSheet(body, "Edit your name and address");
@@ -310,9 +314,9 @@ window.ProfileSheet = (() => {
       e.preventDefault();
       const data = new FormData(form);
       const errors = {};
-      if (!data.get("name")?.trim()) errors.name = "Please enter your name";
-      if (!data.get("flatNo")?.trim()) errors.flatNo = "Please enter your flat / house no.";
-      if (!data.get("addressLine")?.trim()) errors.addressLine = "Please enter your address";
+      if (!data.get("name")?.trim()) errors.name = SiteCustomize.text("errName");
+      if (!data.get("flatNo")?.trim()) errors.flatNo = SiteCustomize.text("errFlat");
+      if (!data.get("addressLine")?.trim()) errors.addressLine = SiteCustomize.text("errAddress");
       if (Object.keys(errors).length > 0) {
         sheet.querySelectorAll(".error").forEach((el) => (el.textContent = ""));
         Object.entries(errors).forEach(([field, msg]) => {
@@ -334,12 +338,12 @@ window.ProfileSheet = (() => {
       saveBtn.innerHTML = `<span class="spinner"></span> Updating...`;
       try {
         const updated = await Api.put("/api/customers/address", payload);
-        Toast.show("Details updated successfully", "success");
+        Toast.msg("detailsUpdated");
         renderProfile(phone, updated);
       } catch (err) {
-        Toast.show(err.message, "error");
+        Toast.msg("serverError", { message: err.message });
         saveBtn.disabled = false;
-        saveBtn.textContent = "Update Details";
+        saveBtn.textContent = SiteCustomize.text("updateDetailsText");
       }
     });
   }
