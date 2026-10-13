@@ -85,7 +85,8 @@ window.AdminStore = (() => {
     const auto = !!(i.schedule && i.schedule.autoEnabled);
     schedBtn.classList.toggle("is-active", auto);
     schedBtn.title = summary(i) + (i.manualOverride ? " — switch is overriding it for now" : "");
-    schedBtn.textContent = i.manualOverride ? "⏰✋" : "⏰";
+    schedBtn.textContent = "⏰";
+    schedBtn.classList.toggle("has-override", !!i.manualOverride);
     if (sheetRoot.querySelector("#storeSchedForm")) paintStatus();
   }
 
