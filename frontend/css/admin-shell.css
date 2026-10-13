@@ -456,3 +456,27 @@ html.tab-switching { overflow-anchor: none; }
 html.tab-switching .admin-header-group {
   transition: transform .38s cubic-bezier(.22, 1, .36, 1), box-shadow 0s;
 }
+
+/* Sales: Export / Import now sit in the toolbar, under the period filter */
+.sales-toolbar .sales-data-actions { margin-top: 0; }
+.sales-toolbar .import-result { margin-bottom: 0; }
+.sales-toolbar .sales-data-actions .btn { flex: 0 1 auto; }
+@media (max-width: 480px) {
+  /* keep Export this period / Export all / Import compact on phones */
+  .sales-toolbar .sales-data-actions { gap: 5px; }
+  .sales-toolbar .sales-data-actions .btn {
+    flex: 0 0 auto;
+    padding-left: 7px;
+    padding-right: 7px;
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+}
+@media (min-width: 351px) and (max-width: 480px) {
+  .sales-toolbar .sales-data-actions { flex-wrap: nowrap; } /* one row; tiny screens wrap instead */
+}
+
+/* Sales: Download / Download all / Upload — golden border, like the rest of the theme */
+.sales-toolbar .sales-data-actions .btn {
+  border: 1.5px solid var(--gold);
+}

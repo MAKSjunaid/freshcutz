@@ -936,9 +936,15 @@ window.AdminStats = (() => {
   };
   const STATUS_SLUGS = { ALL: "All", NEW: "New", DELIVERED: "Delivered", CANCELLED: "Cancelled" };
 
+  /** Part of the download's file name that says which dates it covers: the
+   *  real date for a single day ("2026-10-13" for Today / Yesterday), or
+   *  "2026-09-14_to_2026-10-13" for a range (Last 7 days, Last 30 days,
+   *  Custom date) — much easier to recognise months later than the word
+   *  "Today". All time has no dates, so it stays "AllTime". */
   function periodSlug() {
-    if (activePeriod === "custom" && customRange) {
-      return `${customRange.from}_to_${customRange.to}`;
+    const range = getRange();
+    if (range && range.from && range.to) {
+      return range.from === range.to ? range.from : `${range.from}_to_${range.to}`;
     }
     return PERIOD_SLUGS[activePeriod] || "AllTime";
   }
