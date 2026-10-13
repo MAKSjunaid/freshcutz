@@ -320,3 +320,43 @@ html.sc-hide-desc .product-desc { display: none !important; }
 
 /* "Order now" lands with the sticky header + category bar out of the way */
 #catalog { scroll-margin-top: calc(var(--header-h) + 60px); }
+
+/* ---- Hide-on-scroll header + category chips -----------------------------
+   Scrolling down slides the header and the category chips up out of view;
+   scrolling up even a little slides them back. storefront-header.js only
+   toggles classes — the motion is here, and uses transform only so it stays
+   smooth on phones. The elements stay position: sticky, so hiding them never
+   shifts the page content.
+   - body.header-hidden        → the header slides up by its own height.
+   - .is-tucked (chips/banner) → set only while that bar is stuck under the
+     header; it slides up by the header height PLUS its own height, so it
+     leaves the screen completely (a bar still scrolling with the page, like
+     the chips under the hero, just keeps scrolling naturally). */
+.site-header,
+.store-offline-banner,
+.category-bar {
+  transition:
+    transform .38s cubic-bezier(.22, 1, .36, 1),
+    box-shadow .38s ease;
+}
+
+body.header-hidden .site-header {
+  transform: translate3d(0, -100%, 0);
+  box-shadow: none;
+}
+
+.store-offline-banner.is-tucked,
+.category-bar.is-tucked {
+  transform: translate3d(0, calc(-100% - var(--header-h) - var(--safe-top)), 0);
+  box-shadow: none;
+}
+
+body.header-hidden .site-header,
+.store-offline-banner.is-tucked,
+.category-bar.is-tucked { pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .site-header,
+  .store-offline-banner,
+  .category-bar { transition: none; }
+}
