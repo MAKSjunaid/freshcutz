@@ -44,6 +44,13 @@
     document.dispatchEvent(new Event("freshcutz:scroll-restored"));
   }
 
+  // While a tab's content is swapped/reloaded the page can briefly get SHORTER,
+  // and the browser then yanks the scroll position up (visible as a flash, with
+  // the header popping in and out). Pinning the page height until the saved
+  // position is back means the scroll never gets yanked in the first place.
+  const pin = () => { document.body.style.minHeight = html.scrollHeight + "px"; };
+  const unpin = () => { document.body.style.minHeight = ""; };
+
   // The new tab's content may still be loading (so the page is momentarily too
   // short to scroll that far) — keep nudging for a moment until it can.
   function restore(y) {
@@ -53,16 +60,27 @@
       if (mine !== token) return;
       jumpTo(y);
       const reached = Math.abs(window.scrollY - y) < 2;
-      if (reached && tries >= 1) return;
-      if (++tries > 16) return;
+      if ((reached && tries >= 4) || ++tries > 16) { unpin(); return; }
       setTimeout(step, 90);
     })();
   }
 
-  const cancel = () => { token++; };
+  const cancel = () => { token++; unpin(); };
   ["wheel", "touchstart", "keydown", "mousedown"].forEach((t) =>
     window.addEventListener(t, cancel, { passive: true, capture: true })
   );
+
+  // Runs right AFTER the page's own tab handler (same click, before the browser
+  // paints), so the very first frame already shows the tab at its own scroll
+  // position — no intermediate frame at the old position, no visible jump.
+  let pending = null;
+  document.addEventListener("click", () => {
+    if (pending === null) return;
+    const target = pending;
+    pending = null;
+    jumpTo(target);
+    restore(target); // keeps nudging while the tab's list is still loading
+  });
 
   document.addEventListener(
     "click",
@@ -83,11 +101,10 @@
         const saved = pos[g.name + ":" + to];
         const target = saved !== undefined ? saved : g.fresh(y);
 
-        // let the page's own handler switch the content first, then move
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          // cancel() above is for the user's touches; this restore is ours
-          restore(target);
-        }));
+        // hold the page height steady while the page's own handler swaps the
+        // content, then move to the tab's spot
+        pin();
+        pending = target;
         return;
       }
     },
