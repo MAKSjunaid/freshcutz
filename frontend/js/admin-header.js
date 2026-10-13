@@ -67,5 +67,12 @@
     if (e.target.closest && e.target.closest(".admin-tab[data-view]")) show();
   });
 
+  // a tab switch restored a saved scroll position — re-sync and keep the header shown
+  document.addEventListener("freshcutz:scroll-restored", () => {
+    lastY = Math.max(0, window.scrollY);
+    show();
+    group.classList.toggle("is-scrolled", lastY > 4);
+  });
+
   update();
 })();

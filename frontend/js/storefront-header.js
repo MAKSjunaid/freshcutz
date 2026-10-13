@@ -94,5 +94,12 @@
   const show = () => { travelled = 0; setHidden(false); };
   header.addEventListener("focusin", show);
 
+  // a tab/category switch restored a saved scroll position — re-sync, keep the header shown
+  document.addEventListener("freshcutz:scroll-restored", () => {
+    if (body.style.position === "fixed") return;
+    lastY = Math.max(0, window.scrollY);
+    show();
+  });
+
   update();
 })();
