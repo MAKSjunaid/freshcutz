@@ -345,3 +345,60 @@ body.admin {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Phone-sized top bar: one tidy row ----------------------------------
+   Brand on the left; on the right the store switch, ⏰ hours, 🔔 alerts and
+   an icon-only log out. Nothing wraps, so the bar never grows past its
+   54px height. */
+.lo-icon { display: none; }
+
+@media (max-width: 560px) {
+  .admin-topbar {
+    padding: 0 10px;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .admin-topbar .brand-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .admin-topbar .brand-text .name {
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar-actions {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .store-toggle {
+    gap: 5px;
+    font-size: 11px;
+  }
+
+  .admin-topbar .btn-sm {
+    width: 34px;
+    min-height: 34px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex: 0 0 auto;
+  }
+
+  .lo-text { display: none; }
+  .lo-icon { display: inline; }
+}
+
+/* Very narrow phones: the Online/Offline word gives way to the switch's colour */
+@media (max-width: 370px) {
+  .store-toggle-label { display: none; }
+}
