@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="css/animations.css" />
 <link rel="stylesheet" href="css/components.css" />
 <link rel="stylesheet" href="css/cart.css" />
-<link rel="stylesheet" href="css/admin-shell.css?v=7" />
+<link rel="stylesheet" href="css/admin-shell.css?v=10" />
 <link rel="stylesheet" href="css/admin-cards.css" />
 <link rel="stylesheet" href="css/admin-sales.css" />
 <link rel="stylesheet" href="css/admin-customers.css" />
@@ -140,6 +140,18 @@
             <button class="btn btn-gold btn-sm" id="applyRangeBtn">Apply</button>
           </div>
         </div>
+
+        <!-- Right under the period / custom-date filter, so a long list never
+             has to be scrolled to the bottom just to download or upload. -->
+        <div class="sales-actions-row sales-data-actions">
+          <button class="btn btn-ghost btn-sm" id="exportFilteredBtn">⬇ Download this period</button>
+          <button class="btn btn-ghost btn-sm" id="exportAllBtn">⬇ Download all</button>
+          <label class="btn btn-ghost btn-sm file-btn">
+            ⬆ Upload
+            <input type="file" id="importFile" accept=".xlsx" hidden />
+          </label>
+        </div>
+          <div class="import-result" id="importResult" hidden></div>
       </div>
 
       <!-- Header for whichever period is selected: money + delivered
@@ -169,15 +181,6 @@
         <div id="itemsList"></div>
       </div>
 
-      <div class="sales-actions-row sales-data-actions">
-        <button class="btn btn-outline btn-sm" id="exportFilteredBtn">⬇ Export this period</button>
-        <button class="btn btn-outline btn-sm" id="exportAllBtn">⬇ Export all</button>
-        <label class="btn btn-ghost btn-sm file-btn">
-          ⬆ Import
-          <input type="file" id="importFile" accept=".xlsx" hidden />
-        </label>
-      </div>
-      <div class="import-result" id="importResult" hidden></div>
     </section>
 
     <section class="admin-view" id="view-customers">
