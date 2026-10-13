@@ -1,47 +1,50 @@
 package com.freshcutz.controller;
 
-import com.freshcutz.dto.StoreStatusResponse;
-import com.freshcutz.service.SseBroadcastService;
+import com.freshcutz.dto.AdminStoreResponse;
+import com.freshcutz.dto.StoreScheduleDto;
 import com.freshcutz.service.StoreSettingsService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
-/** Lets the admin flip the shop between accepting and not accepting new
- * orders (e.g. closed for the night, out of stock storewide). Protected
- * by AdminAuthFilter. */
+/** Lets the admin open/close the shop by hand, or set automatic opening hours.
+ * Every change is pushed to open storefront tabs (over /api/store/status/stream)
+ * by StoreSettingsService itself. Protected by AdminAuthFilter. */
 @RestController
 @RequestMapping("/api/admin/store")
 public class AdminStoreController {
 
     private final StoreSettingsService storeSettingsService;
-    private final SseBroadcastService broadcastService;
 
-    public AdminStoreController(StoreSettingsService storeSettingsService, SseBroadcastService broadcastService) {
+    public AdminStoreController(StoreSettingsService storeSettingsService) {
         this.storeSettingsService = storeSettingsService;
-        this.broadcastService = broadcastService;
     }
 
     @GetMapping
-    public StoreStatusResponse status() {
-        return StoreStatusResponse.builder().online(storeSettingsService.isOnline()).build();
+    public AdminStoreResponse status() {
+        return storeSettingsService.adminView();
     }
 
+    /** The topbar toggle. */
     @PatchMapping("/online")
-    public StoreStatusResponse setOnline(@RequestBody Map<String, Boolean> body) {
-        boolean online = Boolean.TRUE.equals(body.get("online"));
-        StoreStatusResponse response =
-                StoreStatusResponse.builder().online(storeSettingsService.setOnline(online)).build();
-        // Pushes to every storefront tab subscribed to
-        // /api/store/status/stream, so the "we're closed" banner (and the
-        // checkout gate that reads it) updates within about a second
-        // instead of waiting for their next 15-second poll — which no
-        // longer exists.
-        broadcastService.broadcastStatus(response);
-        return response;
+    public AdminStoreResponse setOnline(@RequestBody Map<String, Boolean> body) {
+        return storeSettingsService.setOnline(Boolean.TRUE.equals(body.get("online")));
+    }
+
+    /** Saves the automatic opening hours. */
+    @PutMapping("/schedule")
+    public AdminStoreResponse saveSchedule(@RequestBody StoreScheduleDto schedule) {
+        return storeSettingsService.updateSchedule(schedule);
+    }
+
+    /** Ends a manual override so the schedule takes over again. */
+    @PatchMapping("/follow-schedule")
+    public AdminStoreResponse followSchedule() {
+        return storeSettingsService.followSchedule();
     }
 }
