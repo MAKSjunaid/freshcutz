@@ -417,3 +417,31 @@ body.admin {
 @media (max-width: 370px) {
   .store-toggle-label { display: none; }
 }
+
+/* ---- Hide-on-scroll header ---------------------------------------------
+   Scrolling down slides the whole header group (top bar + tabs) up out of
+   view; scrolling up even a little slides it back. admin-header.js only
+   toggles the .is-hidden class — the motion lives here, on the compositor
+   (transform/opacity only), so it stays smooth on phones. The group stays
+   position: sticky, so hiding it never shifts the page content. */
+.admin-header-group {
+  transform: translate3d(0, 0, 0);
+  transition:
+    transform .38s cubic-bezier(.22, 1, .36, 1),
+    box-shadow .38s ease;
+  will-change: transform;
+}
+
+.admin-header-group.is-scrolled {
+  box-shadow: 0 6px 18px rgba(20, 16, 8, .22);
+}
+
+.admin-header-group.is-hidden {
+  transform: translate3d(0, -100%, 0);
+  box-shadow: none;
+  pointer-events: none; /* nothing can be tapped while it is off-screen */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-header-group { transition: none; }
+}
