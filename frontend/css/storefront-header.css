@@ -360,3 +360,13 @@ body.header-hidden .site-header,
   .store-offline-banner,
   .category-bar { transition: none; }
 }
+
+/* ---- Tab/category switching: nothing may animate or flicker --------------- */
+html.tab-switching { overflow-anchor: none; }
+html.tab-switching .site-header,
+html.tab-switching .store-offline-banner,
+html.tab-switching .category-bar {
+  transition: transform .38s cubic-bezier(.22, 1, .36, 1), box-shadow 0s;
+}
+html.tab-switching .brand-text .name,
+html.tab-switching .brand-text .tag { transition: none; }
