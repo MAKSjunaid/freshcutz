@@ -445,3 +445,14 @@ body.admin {
 @media (prefers-reduced-motion: reduce) {
   .admin-header-group { transition: none; }
 }
+
+/* ---- Tab switching: nothing may animate or flicker -----------------------
+   scroll-memory.js sets html.tab-switching while it moves the page to a tab's
+   own scroll position. The shadow fade is paused for that moment, browser
+   scroll-anchoring is off so nothing nudges the page afterwards, and the old
+   whole-view fade-in (which made the page flash on every switch) is gone. */
+.admin-view.active { animation: none; }
+html.tab-switching { overflow-anchor: none; }
+html.tab-switching .admin-header-group {
+  transition: transform .38s cubic-bezier(.22, 1, .36, 1), box-shadow 0s;
+}

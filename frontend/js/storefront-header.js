@@ -54,6 +54,9 @@
   function update() {
     ticking = false;
 
+    // a tab switch is moving the page to that tab's own spot — not the user scrolling
+    if (document.documentElement.classList.contains("tab-switching")) return;
+
     // sheets (cart/checkout/account) pin <body> with position: fixed, which
     // makes scrollY read 0 — leave everything as it was until they close
     if (body.style.position === "fixed") return;

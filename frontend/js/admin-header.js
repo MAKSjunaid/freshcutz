@@ -28,6 +28,9 @@
 
   function update() {
     ticking = false;
+
+    // a tab switch is moving the page to that tab's own spot — not the user scrolling
+    if (document.documentElement.classList.contains("tab-switching")) return;
     const y = Math.max(0, window.scrollY); // ignore iOS rubber-band overscroll
     const dy = y - lastY;
     lastY = y;
