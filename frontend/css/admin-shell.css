@@ -232,9 +232,24 @@ body.admin {
 
 /* ---- Store hours (auto open/close) ------------------------------------- */
 .store-sched-btn {
+  position: relative;
   padding: 4px 8px;
   font-size: 14px;
   line-height: 1;
+}
+
+/* Manual override marker: a small dot on the button corner (stays inside the circle) */
+.store-sched-btn.has-override::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e67e22;
+  border: 1.5px solid #fff;
+  box-sizing: border-box;
 }
 
 .store-sched-btn.is-active {
