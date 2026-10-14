@@ -36,4 +36,19 @@
       if (!(a && a.matches && a.matches(TEXT_FIELD))) html.classList.remove("kb-open");
     }, 60);
   });
+  // ---- 3) always-full-screen page ----------------------------------------
+  // iPhone "Add to Home Screen" mode: when a tab has little content (e.g. one
+  // order), the page is shorter than the screen and iOS pins the bottom bar to
+  // the end of that short page, leaving a blank strip under it. Giving the
+  // page the exact screen height (re-measured on rotate/resume) keeps the bar
+  // on the real bottom edge.
+  const setAppHeight = () => {
+    const h = window.innerHeight || document.documentElement.clientHeight;
+    if (h) html.style.setProperty("--app-h", h + "px");
+  };
+  setAppHeight();
+  window.addEventListener("resize", setAppHeight);
+  window.addEventListener("orientationchange", () => setTimeout(setAppHeight, 250));
+  window.addEventListener("pageshow", setAppHeight);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) setAppHeight(); });
 })();
