@@ -149,18 +149,35 @@ window.AdminPush = (() => {
         Toast.show("Push notifications aren't configured on the server yet", "error");
         return;
       }
-      sub = await withTimeout(
-        registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
-        }),
-        25000,
-        "the phone took too long to register — try again"
+      // iPhone can take a while to register with Apple's push service the
+      // first time (sometimes 30+ seconds). Don't give up early and don't
+      // throw the result away: keep waiting on the SAME request and finish
+      // setting up whenever it arrives.
+      const pending = registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+      // if it only arrives after we stopped waiting, still register it with
+      // the server and show the switch as ON
+      pending
+        .then(async (late) => {
+          try { await Api.post("/api/admin/push/subscribe", late.toJSON()); } catch { /* best effort */ }
+          paint(late);
+        })
+        .catch(() => {});
+      const slowTimer = setTimeout(
+        () => Toast.show("Still registering with Apple — keep this app open…", "success"),
+        12000
       );
+      try {
+        sub = await withTimeout(pending, 120000, "Apple's push service didn't answer in 2 minutes");
+      } finally {
+        clearTimeout(slowTimer);
+      }
       await Api.post("/api/admin/push/subscribe", sub.toJSON());
     } catch (err) {
       paint(await currentSub());
-      Toast.show("Couldn't enable alerts: " + err.message, "error");
+      Toast.show("Couldn't enable alerts: " + err.message + " — close the app completely, reopen it and try again", "error");
       return;
     }
 
