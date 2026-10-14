@@ -207,22 +207,9 @@ window.AdminPush = (() => {
     // show ON straight away — don't wait for anything else
     paint(sub);
     Toast.show("Order alerts are ON for this device", "success");
-    // 1) a notification made by the phone itself (proves the phone will display them)
-    showLocalNotification();
-    // 2) a real push from the server (proves the whole path works)
+    // one real push from the server: shows the confirmation notification
+    // AND proves the whole path works (no second, phone-made notification)
     verifyServerPush(sub);
-  }
-
-  async function showLocalNotification() {
-    try {
-      await registration.showNotification("🔔 Order alerts are ON", {
-        body: "You'll get a notification here for every new order.",
-        icon: "images/logo.jpg",
-        tag: "alerts-enabled",
-      });
-    } catch {
-      /* the toast above already confirmed it */
-    }
   }
 
   async function verifyServerPush(sub) {
