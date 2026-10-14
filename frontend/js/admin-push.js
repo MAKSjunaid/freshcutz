@@ -207,33 +207,6 @@ window.AdminPush = (() => {
     // show ON straight away — don't wait for anything else
     paint(sub);
     Toast.show("Order alerts are ON for this device", "success");
-    // one real push from the server: shows the confirmation notification
-    // AND proves the whole path works (no second, phone-made notification)
-    verifyServerPush(sub);
-  }
-
-  async function verifyServerPush(sub) {
-    try {
-      const r = await Api.post("/api/admin/push/test", { endpoint: sub.endpoint });
-      if (!r || r.configured === false) {
-        Toast.show("Server push isn't set up (VAPID keys missing on the server)", "error");
-        return;
-      }
-      const res = (r.results || [])[0];
-      if (!res) {
-        Toast.show("The server has no record of this device — turn alerts off and on again", "error");
-      } else if (res.status < 200 || res.status >= 300) {
-        Toast.show(
-          "Server could not send a test alert (" + res.status + (res.detail ? ": " + res.detail : "") + ")",
-          "error"
-        );
-      }
-    } catch (err) {
-      // an older server without the test endpoint — nothing to report
-      if (!/not found|404/i.test(err.message || "")) {
-        Toast.show("Couldn't run the server test: " + err.message, "error");
-      }
-    }
   }
 
   async function unsubscribe(sub) {
