@@ -58,7 +58,9 @@ window.AdminPush = (() => {
     if (!registration || !btn) return;
     const sub = await registration.pushManager.getSubscription();
     btn.classList.toggle("is-active", !!sub);
-    btn.title = sub ? "Order alerts on — tap to turn off" : "Enable order alerts on this device";
+    // notifications blocked in the phone's settings: say so instead of "OFF"
+    btn.classList.toggle("is-blocked", !sub && "Notification" in window && Notification.permission === "denied");
+    btn.title = sub ? "Order alerts are ON — tap to turn off" : "Order alerts are OFF — tap to turn on";
   }
 
   async function onToggleClick() {

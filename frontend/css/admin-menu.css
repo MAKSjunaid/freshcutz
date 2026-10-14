@@ -158,7 +158,38 @@
   .store-sched-btn.has-override::after { top: 50%; right: 14px; transform: translateY(-50%); }
   .store-sched-btn.is-active { background: #fff8e1; border-color: var(--gold-light); }
 
+  /* Order alerts: label on the left, a clear ON / OFF switch on the right,
+     so the current state is visible before tapping (a tap flips it). */
   .push-toggle-btn::before { content: "Order alerts"; order: 1; font-size: 14px; }
+  .push-toggle-btn::after {
+    content: "OFF";
+    order: 2;
+    margin-left: auto;
+    min-width: 52px;
+    padding: 5px 12px 5px 26px;
+    border-radius: 999px;
+    background: #d9d3c2 radial-gradient(circle at 13px 50%, #fff 0 8px, transparent 8.5px) no-repeat;
+    color: #5d5646;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-align: center;
+    line-height: 1.2;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  .admin-topbar .topbar-actions .push-toggle-btn.is-active { background: #faf6e8; border-color: #efe5c6; }
+  .push-toggle-btn.is-active::after {
+    content: "ON";
+    padding: 5px 26px 5px 12px;
+    background: #2e9e57 radial-gradient(circle at calc(100% - 13px) 50%, #fff 0 8px, transparent 8.5px) no-repeat;
+    color: #fff;
+  }
+  .push-toggle-btn.is-blocked::after {
+    content: "BLOCKED";
+    padding: 5px 12px;
+    background: #f3d6d2;
+    color: #a83229;
+  }
 
   /* Log out: icon + word */
   .admin-topbar .topbar-actions #logoutBtn .lo-icon { display: inline; order: 0; }

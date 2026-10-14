@@ -29,9 +29,9 @@
 
   document.addEventListener("click", (e) => {
     if (!open || !e.target.closest) return;
-    // choosing ⏰ / 🔔 / Log out, or a tab, closes it — the switch stays open
-    // so you can see it change
-    if (e.target.closest("#storeScheduleBtn, #pushToggleBtn, #logoutBtn, .admin-tab[data-view]")) setOpen(false);
+    // choosing ⏰ / Log out, or a tab, closes it — the store switch and the
+    // 🔔 order-alerts switch stay open so you can see them change
+    if (e.target.closest("#storeScheduleBtn, #logoutBtn, .admin-tab[data-view]")) setOpen(false);
   });
 
   // scrolling the page away closes it
