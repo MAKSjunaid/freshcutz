@@ -33,6 +33,12 @@ public class AdminPushController {
         pushNotificationService.subscribe(request);
     }
 
+    /** "Send me a test notification" — called right after turning alerts on. */
+    @PostMapping("/test")
+    public Map<String, Object> test(@RequestBody(required = false) Map<String, String> body) {
+        return pushNotificationService.sendTest(body == null ? null : body.get("endpoint"));
+    }
+
     @PostMapping("/unsubscribe")
     public void unsubscribe(@RequestBody Map<String, String> body) {
         pushNotificationService.unsubscribe(body.get("endpoint"));

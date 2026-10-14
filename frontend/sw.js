@@ -30,14 +30,19 @@ async function handlePush(data) {
   if (data.type === "order-delivered") {
     const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const siteIsOpen = clients.some((c) => c.visibilityState === "visible");
-    if (siteIsOpen) return;
+    // iPhone requires EVERY push to show a notification — skipping one can
+    // get the whole subscription cancelled — so only skip on other devices.
+    const isIos = /iphone|ipad|ipod/i.test(self.navigator.userAgent || "");
+    if (siteIsOpen && !isIos) return;
   }
 
   await self.registration.showNotification(data.title || "FreshCutz Admin", {
     body: data.body || "",
     icon: "images/logo.jpg",
     badge: "images/logo.jpg",
-    tag: data.type || "freshcutz",
+    // one tag PER ORDER: a shared tag makes a new order silently replace the
+    // previous notification on the phone instead of alerting again.
+    tag: (data.type || "freshcutz") + "-" + (data.orderId || Date.now()),
     data,
   });
 }

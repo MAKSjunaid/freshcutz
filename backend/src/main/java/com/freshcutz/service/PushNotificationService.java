@@ -10,6 +10,7 @@ import nl.martijndwars.webpush.Notification;
 import nl.martijndwars.webpush.PushService;
 import nl.martijndwars.webpush.Subscription;
 import org.apache.http.HttpResponse;
+import org.apache.http.util.EntityUtils;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.Security;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,6 +84,57 @@ public class PushNotificationService {
     public void unsubscribe(String endpoint) {
         if (endpoint == null) return;
         repository.deleteByEndpoint(endpoint);
+    }
+
+    /** Sends one test notification to the given device (or to every device
+     * when endpoint is null) and reports exactly what the push service
+     * answered, so the admin panel can say "works" or show the real reason it
+     * doesn't. Runs synchronously on purpose — unlike the order alerts. */
+    public Map<String, Object> sendTest(String endpoint) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("configured", pushService != null);
+        List<Map<String, Object>> details = new ArrayList<>();
+        result.put("results", details);
+        if (pushService == null) return result;
+
+        List<PushSubscription> subscriptions = endpoint == null
+                ? repository.findAll()
+                : repository.findByEndpoint(endpoint).map(List::of).orElse(List.of());
+        result.put("subscriptions", subscriptions.size());
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("type", "test");
+        data.put("title", "🔔 Order alerts are working");
+        data.put("body", "You'll get a notification here for every new order.");
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(data);
+        } catch (Exception e) {
+            result.put("error", e.getMessage());
+            return result;
+        }
+
+        for (PushSubscription sub : subscriptions) {
+            Map<String, Object> one = new HashMap<>();
+            try {
+                Subscription.Keys keys = new Subscription.Keys(sub.getP256dh(), sub.getAuth());
+                Subscription subscription = new Subscription(sub.getEndpoint(), keys);
+                HttpResponse response = pushService.send(new Notification(subscription, json));
+                int status = response.getStatusLine().getStatusCode();
+                one.put("status", status);
+                if (status >= 300 && response.getEntity() != null) {
+                    String body = EntityUtils.toString(response.getEntity());
+                    one.put("detail", body.length() > 200 ? body.substring(0, 200) : body);
+                }
+                if (status == 404 || status == 410) repository.delete(sub);
+            } catch (Exception e) {
+                one.put("status", -1);
+                one.put("detail", String.valueOf(e.getMessage()));
+                log.warn("Test push failed: {}", e.getMessage());
+            }
+            details.add(one);
+        }
+        return result;
     }
 
     // @Async: runs on a background thread so a slow/unreachable push service

@@ -184,6 +184,13 @@
     background: #2e9e57 radial-gradient(circle at calc(100% - 13px) 50%, #fff 0 8px, transparent 8.5px) no-repeat;
     color: #fff;
   }
+  .push-toggle-btn.is-busy::after {
+    content: "…";
+    padding: 5px 16px;
+    background: #e7dfc4;
+    color: #5d5646;
+  }
+  .push-toggle-btn:disabled { opacity: 1; }
   .push-toggle-btn.is-blocked::after {
     content: "BLOCKED";
     padding: 5px 12px;

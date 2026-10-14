@@ -43,62 +43,180 @@ window.AdminPush = (() => {
       return; // PushManager doesn't exist in a plain iOS Safari tab
     }
     if (!supported() || !btn) return;
+    if (registration) { refreshButton(); return; } // already set up (re-login)
 
     try {
-      registration = await navigator.serviceWorker.register("sw.js");
+      await navigator.serviceWorker.register("sw.js");
+      // .ready resolves only once the worker is ACTIVE — subscribing before
+      // that fails on iPhone (and silently did nothing useful).
+      registration = await navigator.serviceWorker.ready;
     } catch {
       return;
     }
     btn.hidden = false;
     btn.addEventListener("click", onToggleClick);
-    refreshButton();
+    await refreshButton();
+    healServerCopy();
   }
 
+  async function currentSub() {
+    try {
+      return await registration.pushManager.getSubscription();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Paint the switch from the phone's real subscription state. */
   async function refreshButton() {
     if (!registration || !btn) return;
-    const sub = await registration.pushManager.getSubscription();
+    paint(await currentSub());
+  }
+
+  function paint(sub) {
     btn.classList.toggle("is-active", !!sub);
     // notifications blocked in the phone's settings: say so instead of "OFF"
     btn.classList.toggle("is-blocked", !sub && "Notification" in window && Notification.permission === "denied");
     btn.title = sub ? "Order alerts are ON — tap to turn off" : "Order alerts are OFF — tap to turn on";
+    btn.setAttribute("aria-pressed", sub ? "true" : "false");
   }
 
-  async function onToggleClick() {
-    const existing = await registration.pushManager.getSubscription();
-    if (existing) {
-      await unsubscribe(existing);
-    } else {
-      await subscribe();
+  function setBusy(on) {
+    btn.classList.toggle("is-busy", on);
+    btn.disabled = on;
+  }
+
+  /** If this phone is subscribed but the server lost its copy (database
+   * reset, old record cleaned up), quietly register it again. */
+  async function healServerCopy() {
+    const sub = await currentSub();
+    if (!sub) return;
+    try {
+      await Api.post("/api/admin/push/subscribe", sub.toJSON());
+    } catch {
+      /* best effort */
     }
-    refreshButton();
   }
 
-  async function subscribe() {
-    const permission = await Notification.requestPermission();
+  function withTimeout(promise, ms, message) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+    ]);
+  }
+
+  function onToggleClick() {
+    if (btn.disabled) return;
+    // iPhone only shows the permission prompt if it is requested straight
+    // from the tap — before any await — so start it here, first thing.
+    const permissionPromise =
+      Notification.permission === "default"
+        ? Notification.requestPermission()
+        : Promise.resolve(Notification.permission);
+    run(permissionPromise);
+  }
+
+  async function run(permissionPromise) {
+    setBusy(true);
+    try {
+      const existing = await currentSub();
+      if (existing) {
+        await unsubscribe(existing);
+        paint(await currentSub());
+      } else {
+        await subscribe(await permissionPromise);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function subscribe(permission) {
     if (permission !== "granted") {
-      Toast.show("Notification permission was not granted", "error");
+      paint(null);
+      Toast.show(
+        permission === "denied"
+          ? "Notifications are blocked — allow them in Settings › Notifications › FreshCutz Admin"
+          : "Notification permission was not granted",
+        "error"
+      );
       return;
     }
+    let sub;
     try {
       const { publicKey } = await Api.get("/api/admin/push/vapid-public-key");
       if (!publicKey) {
         Toast.show("Push notifications aren't configured on the server yet", "error");
         return;
       }
-      const sub = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      });
+      sub = await withTimeout(
+        registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        }),
+        25000,
+        "the phone took too long to register — try again"
+      );
       await Api.post("/api/admin/push/subscribe", sub.toJSON());
-      Toast.show("Order alerts enabled on this device", "success");
     } catch (err) {
+      paint(await currentSub());
       Toast.show("Couldn't enable alerts: " + err.message, "error");
+      return;
+    }
+
+    // show ON straight away — don't wait for anything else
+    paint(sub);
+    Toast.show("Order alerts are ON for this device", "success");
+    // 1) a notification made by the phone itself (proves the phone will display them)
+    showLocalNotification();
+    // 2) a real push from the server (proves the whole path works)
+    verifyServerPush(sub);
+  }
+
+  async function showLocalNotification() {
+    try {
+      await registration.showNotification("🔔 Order alerts are ON", {
+        body: "You'll get a notification here for every new order.",
+        icon: "images/logo.jpg",
+        tag: "alerts-enabled",
+      });
+    } catch {
+      /* the toast above already confirmed it */
+    }
+  }
+
+  async function verifyServerPush(sub) {
+    try {
+      const r = await Api.post("/api/admin/push/test", { endpoint: sub.endpoint });
+      if (!r || r.configured === false) {
+        Toast.show("Server push isn't set up (VAPID keys missing on the server)", "error");
+        return;
+      }
+      const res = (r.results || [])[0];
+      if (!res) {
+        Toast.show("The server has no record of this device — turn alerts off and on again", "error");
+      } else if (res.status < 200 || res.status >= 300) {
+        Toast.show(
+          "Server could not send a test alert (" + res.status + (res.detail ? ": " + res.detail : "") + ")",
+          "error"
+        );
+      }
+    } catch (err) {
+      // an older server without the test endpoint — nothing to report
+      if (!/not found|404/i.test(err.message || "")) {
+        Toast.show("Couldn't run the server test: " + err.message, "error");
+      }
     }
   }
 
   async function unsubscribe(sub) {
     try {
       await Api.post("/api/admin/push/unsubscribe", { endpoint: sub.endpoint });
+    } catch (err) {
+      Toast.show(err.message, "error");
+      return;
+    }
+    try {
       await sub.unsubscribe();
       Toast.show("Order alerts turned off on this device", "success");
     } catch (err) {
