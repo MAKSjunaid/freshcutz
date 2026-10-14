@@ -48,15 +48,25 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         String token = (header != null && header.startsWith("Bearer ")) ? header.substring(7) : null;
 
         if (!tokenStore.isValid(token)) {
-            writeUnauthorized(response, request.getRequestURI());
+            writeUnauthorized(request, response, request.getRequestURI());
             return;
         }
         chain.doFilter(request, response);
     }
 
-    private void writeUnauthorized(HttpServletResponse response, String path) throws IOException {
+    private void writeUnauthorized(HttpServletRequest request, HttpServletResponse response, String path)
+            throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
+        // This filter runs before Spring MVC's CORS handling, so without these
+        // headers the browser hides the 401 from the page and reports it as a
+        // network failure ("could not reach the server"). The body is only
+        // "please log in again", so echoing the caller's origin is harmless.
+        String origin = request.getHeader("Origin");
+        if (origin != null) {
+            response.setHeader("Access-Control-Allow-Origin", origin);
+            response.setHeader("Vary", "Origin");
+        }
         ApiError error = ApiError.builder()
                 .timestamp(Instant.now())
                 .status(401)

@@ -11,6 +11,37 @@ const Api = (() => {
     return localStorage.getItem("freshcutz_admin_token");
   }
 
+  // True once the page is being refreshed / closed. Requests still in flight
+  // are cancelled by the browser at that moment and fail like a network error —
+  // that must never be mistaken for "the server is unreachable".
+  let unloading = false;
+  window.addEventListener("pagehide", () => { unloading = true; });
+  window.addEventListener("beforeunload", () => { unloading = true; });
+  window.addEventListener("pageshow", () => { unloading = false; });
+
+  // One shared, short "is the server up?" check, used when an admin request
+  // fails without any HTTP answer. Any HTTP reply at all (even an error) means
+  // the server is up.
+  let probe = null;
+  function backendReachable() {
+    if (!probe) {
+      probe = (async () => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 6000);
+        try {
+          await fetch(`${base()}/api/store/status`, { cache: "no-store", signal: ctrl.signal });
+          return true;
+        } catch (_) {
+          return false;
+        } finally {
+          clearTimeout(timer);
+        }
+      })();
+      probe.finally(() => setTimeout(() => { probe = null; }, 2000));
+    }
+    return probe;
+  }
+
   async function request(method, path, body, isMultipart = false) {
     const headers = {};
     const token = adminToken();
@@ -33,15 +64,30 @@ const Api = (() => {
     try {
       response = await fetch(`${base()}${path}`, { method, headers, body: payload });
     } catch (networkErr) {
-      // Can not tell a dead backend apart from a dropped connection from
-      // here — but either way, an admin screen that can not reach the
-      // server is not usable, so treat it the same as an expired session
-      // rather than leaving the caller to show a raw error: drop the
-      // token and send the admin straight back to the sign-in screen,
-      // same as it would if they cleared their browser data themselves.
+      // No HTTP answer at all. Three very different things look like this:
+      //  1. the page is being refreshed (the browser cancels in-flight
+      //     requests) — nothing should happen, and above all the login must
+      //     NOT be dropped;
+      //  2. the server really is unreachable / still waking up — keep the
+      //     login, tell the admin once, and let the next request retry;
+      //  3. the server answered "401 not signed in" but the browser hid that
+      //     answer (the backend's auth filter used to reply without CORS
+      //     headers) — only this case means the session is really gone.
+      // A quick check of a public endpoint tells 2 and 3 apart.
+      if (unloading) {
+        throw new Error("Request cancelled");
+      }
       if (isAdminPath && !isLoginPath) {
-        localStorage.removeItem("freshcutz_admin_token");
-        window.dispatchEvent(new CustomEvent("freshcutz:unauthorized", { detail: { reason: "offline" } }));
+        if (await backendReachable()) {
+          if (!unloading && adminToken()) {
+            localStorage.removeItem("freshcutz_admin_token");
+            window.dispatchEvent(new CustomEvent("freshcutz:unauthorized", { detail: { reason: "expired" } }));
+          }
+          throw new Error("Your session expired — please sign in again");
+        }
+        if (!unloading) {
+          window.dispatchEvent(new CustomEvent("freshcutz:offline"));
+        }
       }
       throw new Error(
         "Could not reach the FreshCutz server. Check your internet connection or that the backend is running."

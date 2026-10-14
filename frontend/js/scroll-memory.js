@@ -41,7 +41,7 @@
   }
 
   const GROUPS = [
-    { name: "view",      item: ".admin-header-group .admin-tab[data-view]", key: (el) => el.dataset.view,        fresh: () => 0 },
+    { name: "view",      item: ".admin-tabs > .admin-tab[data-view]", key: (el) => el.dataset.view,        fresh: () => 0 },
     { name: "ostatus",   item: "#orderStatusFilter .admin-tab",             key: (el) => el.dataset.status || "", fresh: () => 0 },
     { name: "salespane", item: "#salesSubtabs .sales-subtab",               key: (el) => el.dataset.pane,       fresh: () => 0 },
     { name: "category",  item: "#categoryScroll .cat-chip",                 key: (el) => el.dataset.cat,        fresh: (y) => Math.min(y, catalogStart()) },

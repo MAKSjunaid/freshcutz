@@ -24,6 +24,8 @@
 <link rel="stylesheet" href="css/admin-customers.css" />
 <link rel="stylesheet" href="css/admin-items.css" />
 <link rel="stylesheet" href="css/admin-customize.css?v=7" />
+<link rel="stylesheet" href="css/admin-bottomnav.css?v=1" />
+<link rel="stylesheet" href="css/admin-menu.css?v=1" />
 </head>
 <body class="admin">
 
@@ -55,7 +57,7 @@
         <div class="brand-text">
           <div class="name">FRESHCUTZ ADMIN</div>
         </div>
-        <div class="topbar-actions">
+        <div class="topbar-actions" id="topbarActions">
           <div class="store-toggle">
             <span class="store-toggle-label" id="storeToggleLabel">Online</span>
             <label class="switch">
@@ -67,6 +69,12 @@
           <button class="btn btn-ghost btn-sm push-toggle-btn" id="pushToggleBtn" hidden title="Enable order alerts on this device">🔔</button>
           <button class="btn btn-ghost btn-sm" id="logoutBtn" type="button" aria-label="Log out" title="Log out"><span class="lo-text">Log out</span><span class="lo-icon" aria-hidden="true">⏻</span></button>
         </div>
+        <!-- Phones: the switch, ⏰, 🔔 and Log out above live in a drop-down opened by
+             this button (css/admin-menu.css + js/admin-menu.js). Hidden on wider screens. -->
+        <button class="btn btn-ghost btn-sm menu-btn" id="topMenuBtn" type="button" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="topbarActions">
+          <span class="menu-lines" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="menu-dot" aria-hidden="true"></span>
+        </button>
       </header>
 
       <div class="push-ios-banner" id="pushIosBanner" hidden>
@@ -78,10 +86,25 @@
         <button class="admin-tab active" data-view="orders">📦 Orders <span class="count-pill" id="newOrdersPill" hidden>0</span></button>
         <button class="admin-tab" data-view="products">🍗 Products</button>
         <button class="admin-tab" data-view="stats">📊 Sales</button>
-        <button class="admin-tab" data-view="customers">👥 Customer Info</button>
+        <button class="admin-tab" data-view="customers">👥 Customers</button>
         <button class="admin-tab" data-view="customize">🎨 Customize</button>
       </nav>
     </div>
+
+    <!-- Invisible layer under the phone menu drop-down: tapping it closes the menu. -->
+    <div class="menu-backdrop" id="topMenuBackdrop" hidden></div>
+
+    <!-- Phone menu: fixed to the bottom of the screen (shown only on phones —
+         see css/admin-bottomnav.css; wider screens keep the tabs at the top).
+         It carries the same .admin-tab[data-view] buttons as the top tabs, so
+         admin-main.js switches views with it without any change. -->
+    <nav class="admin-tabs admin-bottom-nav" id="adminBottomNav" aria-label="Main menu">
+      <button class="admin-tab active" data-view="orders" type="button"><span class="nav-ico" aria-hidden="true">📦</span><span class="nav-lbl">Orders</span><span class="nav-badge" id="newOrdersBadgeBottom" hidden>0</span></button>
+      <button class="admin-tab" data-view="products" type="button"><span class="nav-ico" aria-hidden="true">🍗</span><span class="nav-lbl">Products</span></button>
+      <button class="admin-tab" data-view="stats" type="button"><span class="nav-ico" aria-hidden="true">📊</span><span class="nav-lbl">Sales</span></button>
+      <button class="admin-tab" data-view="customers" type="button"><span class="nav-ico" aria-hidden="true">👥</span><span class="nav-lbl">Customers</span></button>
+      <button class="admin-tab" data-view="customize" type="button"><span class="nav-ico" aria-hidden="true">🎨</span><span class="nav-lbl">Customize</span></button>
+    </nav>
 
     <section class="admin-view active" id="view-orders">
       <div class="search-row">
@@ -103,7 +126,7 @@
 
     <section class="admin-view" id="view-stats">
       <div class="sales-toolbar">
-        <select id="salesPeriod" class="period-select" aria-label="Period">
+        <select id="salesPeriod" class="period-select" autocomplete="off" aria-label="Period">
           <option value="today" selected>Today</option>
           <option value="yesterday">Yesterday</option>
           <option value="7d">Last 7 days</option>
@@ -117,7 +140,7 @@
           <div class="date-range-fields">
             <div class="date-field">
               <div class="date-field-box">
-                <input type="date" id="statsFrom" aria-label="From date" />
+                <input type="date" id="statsFrom" autocomplete="off" aria-label="From date" />
                 <!-- The real input above is fully invisible (see
                      admin-sales.css) — this box is the only thing ever
                      shown. admin-stats.js keeps its text in sync: the
@@ -131,7 +154,7 @@
             </div>
             <div class="date-field">
               <div class="date-field-box">
-                <input type="date" id="statsTo" aria-label="To date" />
+                <input type="date" id="statsTo" autocomplete="off" aria-label="To date" />
                 <span class="date-field-hint" id="statsToHint">To Date</span>
               </div>
             </div>
@@ -201,20 +224,22 @@
   <script src="js/config.js"></script>
   <script src="js/utils.js"></script>
   <script src="js/toast.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/admin-auth.js"></script>
+  <script src="js/api.js?v=2"></script>
+  <script src="js/admin-auth.js?v=2"></script>
   <script src="js/admin-store.js?v=5"></script>
   <script src="js/admin-push.js"></script>
   <script src="js/admin-products.js"></script>
   <script src="js/admin-orders.js"></script>
-  <script src="js/admin-stats.js"></script>
+  <script src="js/admin-stats.js?v=2"></script>
   <script src="js/admin-customers.js"></script>
   <script src="js/admin-sales-customers.js"></script>
   <script src="js/admin-items.js"></script>
   <script src="js/site-elements.js?v=5"></script>
   <script src="js/admin-customize.js?v=14"></script>
   <script src="js/admin-header.js?v=3"></script>
-  <script src="js/scroll-memory.js?v=4"></script>
+  <script src="js/admin-bottomnav.js?v=1"></script>
+  <script src="js/admin-menu.js?v=1"></script>
+  <script src="js/scroll-memory.js?v=5"></script>
   <script src="js/admin-main.js"></script>
 </body>
 </html>

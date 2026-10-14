@@ -721,6 +721,38 @@ window.AdminStats = (() => {
     applyPeriod(value);
   });
 
+  /** Makes the filter controls show exactly the period whose data is on
+   *  screen. Browsers restore <select>/<input> values on reload and when
+   *  coming back via Back/Forward, while activePeriod itself always starts
+   *  as "today" — which is how the dropdown could say "All time" over
+   *  Today's numbers. Run at load, on pageshow, and on login/logout. */
+  function syncPeriodControls() {
+    periodSelect.value = activePeriod;
+    const showCustom = activePeriod === "custom" && !!customRange;
+    customRow.hidden = !showCustom;
+    fromInput.value = showCustom ? customRange.from : "";
+    toInput.value = showCustom ? customRange.to : "";
+    syncDateHint(fromInput, fromHint, "From Date");
+    syncDateHint(toInput, toHint, "To Date");
+  }
+
+  /** A fresh sign-in/out starts back on Today, like a fresh page load. */
+  function resetPeriod() {
+    const changed = activePeriod !== "today" || customRange;
+    activePeriod = "today";
+    customRange = null;
+    if (changed) {
+      summaryValid = false;
+      lastSnapshot = null;
+    }
+    syncPeriodControls();
+  }
+
+  syncPeriodControls();
+  window.addEventListener("pageshow", syncPeriodControls);
+  document.addEventListener("freshcutz:logout", resetPeriod);
+  document.addEventListener("freshcutz:login", resetPeriod);
+
   function formatDateHeading(dateStr) {
     // dateStr is a plain "yyyy-MM-dd" — parsed as local midnight (not UTC)
     // so the weekday/date shown always matches the date the backend meant.
