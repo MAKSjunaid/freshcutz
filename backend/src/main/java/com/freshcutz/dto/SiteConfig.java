@@ -110,6 +110,8 @@ public class SiteConfig {
     private boolean showSuccessMessage = true;
     private String successMessage = "We'll call you to confirm delivery timing.";
     private boolean showScreenshotHint = true;
+    /** Fly-to-cart, cart bounce and the order-placed tick animation. */
+    private boolean showCartAnimations = true;
 
     // ---- Offline notices ------------------------------------------------------
     private String offlineBannerText = "🔴 We're currently offline and not accepting new orders right now.";

@@ -594,6 +594,7 @@ window.AdminCustomize = (() => {
         ${textField("cartEmptyText", "Message when the cart is empty", 160)}
         ${textField("checkoutButtonText", "Checkout button text", 40)}
         ${textField("placeOrderText", "Place-order button text", 30)}
+        ${toggleRow("showCartAnimations", "Cart animations", "Item flies into the cart, the cart bar bounces, and the order-placed tick draws itself")}
         ${toggleRow("showLandmarkField", "Ask for a landmark in the address form")}
         ${toggleRow("showNotesField", "Ask for special instructions")}
         ${textField("notesLabel", "Special-instructions label", 60)}

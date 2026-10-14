@@ -227,7 +227,7 @@
     const body = `
       <div class="sheet-body">
         <div class="order-success">
-          <div class="success-check">✓</div>
+          <div class="success-check"><svg class="success-tick" viewBox="0 0 52 52" aria-hidden="true"><path d="M14 27l8.5 8.5L38 18"/></svg><i class="spark" style="--r:0deg"></i><i class="spark" style="--r:45deg"></i><i class="spark" style="--r:90deg"></i><i class="spark" style="--r:135deg"></i><i class="spark" style="--r:180deg"></i><i class="spark" style="--r:225deg"></i><i class="spark" style="--r:270deg"></i><i class="spark" style="--r:315deg"></i><span class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">✓</span></div>
           <h2 class="anim-fade-up" style="animation-delay:120ms;">${Utils.escapeHtml(SiteCustomize.t("successTitle"))}</h2>
           ${SiteCustomize.on("showSuccessMessage") && SiteCustomize.t("successMessage") ? `<p class="anim-fade-up" style="animation-delay:180ms;color:var(--text-muted);margin-top:6px;">${Utils.escapeHtml(SiteCustomize.t("successMessage"))}</p>` : ""}
           <div class="order-id-chip anim-fade-up" style="animation-delay:240ms;">

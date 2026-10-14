@@ -290,6 +290,9 @@
       bar.hidden = c.showAnnouncement !== true || !c.announcementText;
     }
 
+    // cart animations on/off (css/cart-fx.css reads this class)
+    document.documentElement.classList.toggle("no-cart-fx", c.showCartAnimations === false);
+
     const searchWrap = $("searchWrap");
     const searchInput = $("searchInput");
     if (searchWrap) searchWrap.hidden = c.showSearch === false;

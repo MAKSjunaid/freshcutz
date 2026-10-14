@@ -272,13 +272,17 @@
       patchQtyUI(card, productId, cardVariant[productId], false);
     } else if (addBtn) {
       const variant = cardVariant[productId] || "variant1";
+      const fromRect = addBtn.getBoundingClientRect(); // before the button hides itself
       Cart.setQuantity(product, variant, 1);
       patchQtyUI(card, productId, variant, true);
       Toast.msg("addedToCart", { name: product.name });
+      if (window.CartFx) CartFx.fly(fromRect, card);
     } else if (incBtn) {
       const variant = cardVariant[productId] || "variant1";
+      const fromRect = incBtn.getBoundingClientRect();
       Cart.setQuantity(product, variant, Cart.quantityOf(productId, variant) + 1);
       patchQtyUI(card, productId, variant, true);
+      if (window.CartFx) CartFx.fly(fromRect, card);
     } else if (decBtn) {
       const variant = cardVariant[productId] || "variant1";
       Cart.setQuantity(product, variant, Cart.quantityOf(productId, variant) - 1);
