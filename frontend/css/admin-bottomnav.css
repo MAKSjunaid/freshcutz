@@ -25,7 +25,9 @@
   body.admin {
     box-sizing: border-box;
     min-height: 100vh;
+    min-height: -webkit-fill-available;   /* iPhone */
     min-height: 100dvh;
+    min-height: var(--app-h, 100dvh);     /* exact screen height, set by admin-bottomnav.js */
     padding-bottom: 0;          /* #adminApp already reserves the bar's room */
   }
 
