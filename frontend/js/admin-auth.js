@@ -23,12 +23,24 @@ const AdminAuth = (() => {
     adminApp.hidden = false;
   }
 
+  let loggingOut = false;
+
   function logout(silent) {
     const token = localStorage.getItem(TOKEN_KEY);
+    loggingOut = true;
+    setTimeout(() => { loggingOut = false; }, 4000);
     localStorage.removeItem(TOKEN_KEY);
     showLogin();
     if (token) {
-      Api.post("/api/admin/auth/logout").catch(() => {});
+      // Sent straight to the server WITH the token we just took out of storage.
+      // (Going through Api.post here sent it without the token, the server
+      // turned it down, and that failure looked like "could not reach the
+      // server" and triggered a second sign-out message.) Fire-and-forget:
+      // the admin is already signed out on this device either way.
+      fetch(`${window.FRESHCUTZ_API_BASE || ""}/api/admin/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
     }
     document.dispatchEvent(new CustomEvent("freshcutz:logout"));
     if (!silent) {
@@ -69,15 +81,22 @@ const AdminAuth = (() => {
     // so both drop straight back to the login screen - same as
     // clearing the browser's stored data would - rather than leaving
     // a half-working screen full of raw error toasts.
-    window.addEventListener("freshcutz:unauthorized", (e) => {
-      const reason = e.detail && e.detail.reason;
-      Toast.show(
-        reason === "offline"
-          ? "Could not reach the server — please sign in again"
-          : "Your session expired — please sign in again",
-        "error"
-      );
+    window.addEventListener("freshcutz:unauthorized", () => {
+      // already signed out (or signing out right now): nothing more to say
+      if (loggingOut || adminApp.hidden) return;
+      Toast.show("Your session expired — please sign in again", "error");
       logout(true);
+    });
+
+    // The server could not be reached (and is not just rejecting us): stay
+    // signed in, say so once in a while, and let the next request retry.
+    let lastOfflineToast = 0;
+    window.addEventListener("freshcutz:offline", () => {
+      if (loggingOut || adminApp.hidden) return;
+      const now = Date.now();
+      if (now - lastOfflineToast < 30000) return;
+      lastOfflineToast = now;
+      Toast.show("Can't reach the server right now — you're still signed in, it will reconnect", "error");
     });
 
     if (hasToken()) {
