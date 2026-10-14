@@ -17,12 +17,26 @@
   /* room under every page so the last item isn't hidden behind the bar */
   #adminApp { padding-bottom: calc(var(--admin-nav-h) + var(--safe-bottom)); }
 
+  /* Short pages: make the page itself always at least one full screen tall,
+     so the phone browser never ends up with a "short document" whose bottom
+     edge (where the bar is pinned) sits above the real bottom of the screen.
+     100dvh follows the browser's address bar; 100vh is the fallback. */
+  html { min-height: 100%; }
+  body.admin {
+    box-sizing: border-box;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-bottom: 0;          /* #adminApp already reserves the bar's room */
+  }
+
   .admin-tabs.admin-bottom-nav {
     display: flex;
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
+    top: auto;
+    transform: translate3d(0, 0, 0);   /* own layer: stays glued while the page height changes */
     z-index: 550;               /* above the page, below sheets (800+) and the + button */
     height: calc(var(--admin-nav-h) + var(--safe-bottom));
     padding: 0 6px var(--safe-bottom);
