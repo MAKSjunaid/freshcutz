@@ -170,7 +170,30 @@ window.AdminPush = (() => {
         12000
       );
       try {
-        sub = await withTimeout(pending, 120000, "Apple's push service didn't answer in 2 minutes");
+        // On iPhone, subscribe() sometimes never reports back even though the
+        // phone HAS created the subscription (it then shows up as ON only
+        // after a restart). So also look for it directly every 1.5 s and go
+        // on as soon as either one produces it.
+        let stopPolling = false;
+        const polled = (async () => {
+          const until = Date.now() + 120000;
+          while (!stopPolling && Date.now() < until) {
+            await new Promise((r) => setTimeout(r, 1500));
+            if (stopPolling) return null;
+            const found = await currentSub();
+            if (found) return found;
+          }
+          return null;
+        })();
+        try {
+          sub = await withTimeout(
+            Promise.race([pending, polled.then((f) => f || new Promise(() => {}))]),
+            120000,
+            "Apple's push service didn't answer in 2 minutes"
+          );
+        } finally {
+          stopPolling = true;
+        }
       } finally {
         clearTimeout(slowTimer);
       }
