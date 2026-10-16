@@ -58,7 +58,30 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleGeneric(Exception ex, HttpServletRequest req) {
+        // A browser tab that closed/slept mid-stream (SSE) or mid-download
+        // is normal, not an error — and the connection is gone, so there is
+        // nothing to answer (writing JSON onto a text/event-stream response
+        // only produced a second, bigger error in the log).
+        if (isClientGone(ex) || isEventStream(req)) {
+            return null;
+        }
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong: " + ex.getMessage(), req, null);
+    }
+
+    private static boolean isEventStream(HttpServletRequest req) {
+        String accept = req.getHeader("Accept");
+        return accept != null && accept.contains("text/event-stream");
+    }
+
+    private static boolean isClientGone(Throwable ex) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            if (t instanceof java.io.IOException
+                    || t instanceof org.springframework.web.context.request.async.AsyncRequestNotUsableException) {
+                return true;
+            }
+            if (t.getCause() == t) break;
+        }
+        return false;
     }
 
     private ResponseEntity<ApiError> build(HttpStatus status, String message, HttpServletRequest req, List<String> details) {
