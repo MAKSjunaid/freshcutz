@@ -14,7 +14,12 @@
 (() => {
   const tabs = document.querySelectorAll(".admin-tabs > .admin-tab[data-view]");
   const views = document.querySelectorAll(".admin-view");
-  const POLL_MS = 15000;
+  // Still checks for new orders every 15 s, but the server answers from a
+  // small in-memory cache (it only re-reads the database when an order really
+  // changes), so this no longer keeps the Neon database awake. A push
+  // notification (sw.js -> the "message" listener below) and returning to the
+  // app also refresh immediately.
+  const POLL_MS = 15000; // 15 s — answered from an in-memory cache on the server, so it does not touch the DB
   let pollTimer = null;
   let loggedIn = false;
   let currentView = "orders"; // matches the tab marked "active" in admin.html
@@ -117,6 +122,13 @@
    * browser tab is backgrounded. Gated on loggedIn so this can't start
    * polling early if the tab becomes visible again while still sitting on
    * the login screen. */
+  // A push notification just arrived (sw.js tells every open page): refresh now.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", (e) => {
+      if (loggedIn && e.data && e.data.type === "freshcutz-push") pollTick();
+    });
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (!loggedIn) return;
     if (document.hidden) {
