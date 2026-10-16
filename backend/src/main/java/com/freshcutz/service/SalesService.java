@@ -142,10 +142,12 @@ public class SalesService {
      * polled everywhere in the admin panel (not just the Sales tab) to
      * keep the Orders-tab badge live without paying for the full
      * multi-bucket summary above on every tick. */
-    @Transactional(readOnly = true)
     public NewOrdersCountResponse getNewOrdersCount() {
+        // No @Transactional here on purpose: a cache hit must not open a DB
+        // connection (that would wake Neon). The repository call opens its
+        // own short read-only transaction only when the cache is stale.
         return NewOrdersCountResponse.builder()
-                .newOrders(orderRepository.countByStatus(OrderStatus.NEW))
+                .newOrders(NewOrdersCountCache.get(() -> orderRepository.countByStatus(OrderStatus.NEW)))
                 .build();
     }
 

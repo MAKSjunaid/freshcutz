@@ -18,6 +18,7 @@ import java.util.List;
  * the customer's cart or the product catalog changes later.
  */
 @Entity
+@EntityListeners(OrderCountListener.class)
 @Table(name = "orders", indexes = {
         @Index(name = "idx_orders_status_delivered_at", columnList = "status, delivered_at"),
         // Backs every Orders-tab list query added by this session's
