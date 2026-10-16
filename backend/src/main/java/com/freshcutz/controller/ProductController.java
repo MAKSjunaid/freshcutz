@@ -1,7 +1,7 @@
 package com.freshcutz.controller;
 
 import com.freshcutz.dto.ProductResponse;
-import com.freshcutz.entity.Product;
+import com.freshcutz.service.StorefrontCache;
 import com.freshcutz.service.ProductService;
 import com.freshcutz.service.SseBroadcastService;
 import org.springframework.http.CacheControl;
@@ -51,15 +51,15 @@ public class ProductController {
      * replacing the photo changes the URL, it never serves stale bytes. */
     @GetMapping("/{id}/image")
     public ResponseEntity<byte[]> image(@PathVariable Long id) {
-        Product product = productService.getEntityForImage(id);
-        if (product.getImageData() == null) {
+        StorefrontCache.ProductImage image = productService.getImage(id);
+        if (image == null) {
             return ResponseEntity.notFound().build();
         }
         MediaType type = MediaType.parseMediaType(
-                product.getImageContentType() != null ? product.getImageContentType() : "image/jpeg");
+                image.contentType() != null ? image.contentType() : "image/jpeg");
         return ResponseEntity.ok()
                 .contentType(type)
                 .cacheControl(CacheControl.maxAge(365, TimeUnit.DAYS).cachePublic())
-                .body(product.getImageData());
+                .body(image.data());
     }
 }

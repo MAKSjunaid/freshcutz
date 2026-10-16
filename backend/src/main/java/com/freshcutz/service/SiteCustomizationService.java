@@ -38,7 +38,9 @@ public class SiteCustomizationService {
         this.mapper = mapper;
     }
 
-    @Transactional(readOnly = true)
+    // No @Transactional on get()/getForLogo() on purpose: a cache hit must not
+    // open a database connection (that would wake the Neon database). The
+    // repository calls inside open their own short read-only transaction.
     public SiteResponse get() {
         SiteResponse hit = cached;
         if (hit != null) return hit;
@@ -92,9 +94,8 @@ public class SiteCustomizationService {
         return remember(repository.save(row));
     }
 
-    @Transactional(readOnly = true)
     public SiteCustomization getForLogo() {
-        return repository.findById(ROW_ID).orElse(null);
+        return StorefrontCache.logo(() -> repository.findById(ROW_ID).orElse(null));
     }
 
     // ---- internals -----------------------------------------------------
@@ -108,6 +109,7 @@ public class SiteCustomizationService {
     }
 
     private SiteResponse remember(SiteCustomization saved) {
+        StorefrontCache.logoChanged(); // the saved logo/row replaces the cached copy once committed
         SiteResponse built = build(saved);
         cached = built;
         return built;
