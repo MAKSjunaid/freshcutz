@@ -20,6 +20,7 @@ import java.time.Instant;
  * null when only one size is sold.
  */
 @Entity
+@EntityListeners(ProductCacheListener.class)
 @Table(name = "products")
 @Getter
 @Setter
