@@ -12,7 +12,9 @@ services:
     plan: free
     dockerfilePath: backend/Dockerfile
     dockerContext: backend
-    healthCheckPath: /api/products
+    # /api/health never touches the database (see HealthController), so
+    # Render's constant health checks don't keep Neon awake.
+    healthCheckPath: /api/health
     envVars:
       # Paste these three from your Neon project's "Connection string"
       # (Dashboard -> your project -> Connect). Neon gives you a single
