@@ -56,7 +56,10 @@ public class StoreSettingsService {
     private static final Logger log = LoggerFactory.getLogger(StoreSettingsService.class);
 
     private static final Long SETTINGS_ID = 1L;
-    private static final long CACHE_MS = 5 * 60_000L;
+    // Long on purpose: every re-read wakes the Neon database. Admin edits refresh
+    // this copy immediately (see persist()), so this only matters for rows
+    // edited by hand in the database.
+    private static final long CACHE_MS = 6 * 3_600_000L;
     private static final long MAX_SLEEP_MS = 6 * 3_600_000L;
     private static final String DEFAULT_OPEN = "09:00";
     private static final String DEFAULT_CLOSE = "21:00";

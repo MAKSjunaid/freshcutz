@@ -23,13 +23,16 @@ public class ProductService {
 
     /** Deliberately uses listViewForCustomers() (a lighter row that never
      * selects imageData), not findByEnabledTrueOrderByDisplayOrderAscIdAsc()
-     * — see ProductListRow for why. The storefront polls this every 15
-     * seconds, so this is the single hottest query in the whole app. */
-    @Transactional(readOnly = true)
+     * — see ProductListRow for why. Every customer page load (and every live
+     * connection) asks for this, so the answer is kept in memory
+     * (StorefrontCache) and only re-read after an admin changes a product.
+     * No @Transactional on purpose: a cache hit must not open a database
+     * connection, which would wake the Neon database. The query itself runs
+     * fine without one. */
     public List<ProductResponse> listForCustomers() {
-        return productRepository.listViewForCustomers().stream()
+        return StorefrontCache.products(() -> productRepository.listViewForCustomers().stream()
                 .map(ProductResponse::from)
-                .collect(Collectors.toList());
+                .collect(Collectors.toList()));
     }
 
     /** Same reasoning as listForCustomers() above — the admin Products tab
@@ -104,6 +107,18 @@ public class ProductService {
         product.setImageData(imageData);
         product.setImageContentType(contentType);
         return ProductResponse.from(productRepository.save(product));
+    }
+
+    /** A product's photo for ProductController's image endpoint, served from
+     * memory when it was viewed recently (see StorefrontCache). Returns null
+     * when the product has no photo. No @Transactional on purpose, same
+     * reason as listForCustomers(): a cache hit must not touch the database. */
+    public StorefrontCache.ProductImage getImage(Long id) {
+        return StorefrontCache.image(id, () -> {
+            Product product = getEntity(id);
+            if (product.getImageData() == null) return null;
+            return new StorefrontCache.ProductImage(product.getImageData(), product.getImageContentType());
+        });
     }
 
     /** Public accessor for ProductController's image-streaming endpoint —
