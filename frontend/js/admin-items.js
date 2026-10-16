@@ -73,6 +73,12 @@ window.AdminItems = (() => {
   // A variant breakdown depends on the status box too, so it is keyed by both.
   const vKey = (productId) => `${productId}|${currentStatus()}`;
 
+  /** The word after a quantity follows the selected status box, so a number
+   *  never reads as "sold" when it isn't (cancelled / still-new orders). */
+  function qtyWord() {
+    return { NEW: "new", DELIVERED: "delivered", CANCELLED: "cancelled" }[currentStatus()] || "ordered";
+  }
+
   function itemsSummary(product) {
     const isOpen = expanded.has(product.productId);
     return `
@@ -81,7 +87,7 @@ window.AdminItems = (() => {
         <span class="item-card-name"><span class="item-card-chevron">▸</span>${Utils.escapeHtml(product.productName)}</span>
         <span class="item-card-stats">
           <span class="item-card-revenue">${Utils.formatMoney(product.revenue)}</span>
-          <span class="item-card-qty">${product.quantity} sold</span>
+          <span class="item-card-qty">${product.quantity} ${qtyWord()}</span>
         </span>
       </button>
       <div class="item-variant-list" ${isOpen ? "" : "hidden"}>
@@ -94,7 +100,7 @@ window.AdminItems = (() => {
     return `
       <div class="item-variant-row">
         <span>${Utils.escapeHtml(v.variantLabel)}</span>
-        <span>${v.quantity} sold · ${Utils.formatMoney(v.revenue)}</span>
+        <span>${v.quantity} ${qtyWord()} · ${Utils.formatMoney(v.revenue)}</span>
       </div>`;
   }
 
