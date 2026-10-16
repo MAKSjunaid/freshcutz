@@ -27,6 +27,11 @@ self.addEventListener("push", (event) => {
  * order always shows regardless, since that's the one thing they must
  * not miss, whether the site is open or not. */
 async function handlePush(data) {
+  // Tell any open admin page to refresh itself right away (it no longer polls
+  // the server every few seconds — see admin-main.js).
+  const open = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  open.forEach((c) => c.postMessage({ type: "freshcutz-push", kind: data.type }));
+
   if (data.type === "order-delivered") {
     const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const siteIsOpen = clients.some((c) => c.visibilityState === "visible");
