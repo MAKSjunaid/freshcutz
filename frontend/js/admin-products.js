@@ -41,6 +41,8 @@ window.AdminProducts = (() => {
     .ap-cat-name{display:block;font-size:16px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .ap-cat-meta{display:block;margin-top:2px;font-size:12.5px;color:var(--text-muted,#777)}
     .ap-cat-go{flex:0 0 auto;font-size:22px;color:var(--text-muted,#999)}
+    .ap-cat-pos{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;padding:5px 9px;border-radius:999px;background:var(--bg-soft,rgba(0,0,0,.06));font-size:12.5px;font-weight:700;color:var(--text-muted,#666)}
+    .ap-cat-pos:active{transform:scale(.95)}
     .ap-cat{scroll-margin-top:120px}
     .ap-cat.ap-open{margin-bottom:8px;box-shadow:var(--shadow-md,0 2px 8px rgba(0,0,0,.15))}
     .ap-cat.ap-open .ap-cat-go{transform:rotate(90deg)}
@@ -216,9 +218,21 @@ window.AdminProducts = (() => {
 
   const catKey = (p) => (p.category || "").trim();
 
+  /** The category tab the customer website opens on ("" = the normal "All" tab); null = not read yet. */
+  let defaultCat = null;
+  async function loadDefaultCat() {
+    if (defaultCat !== null) return;
+    try {
+      defaultCat = ((await Api.get("/api/store/default-category")) || {}).category || "";
+    } catch {
+      defaultCat = ""; // not essential: the tiles just won't show the star
+    }
+  }
+
   function metaLine(c) {
     const n = picked.get(c.name) || 0;
     return [
+      c.name && c.name === defaultCat ? "★ opens first on the shop" : "",
       plural(c.total, "item"),
       c.hidden ? `${c.hidden} hidden` : "",
       c.outOfStock ? `${c.outOfStock} out of stock` : "",
@@ -240,6 +254,7 @@ window.AdminProducts = (() => {
     return `<button type="button" class="ap-cat${isOpen ? " ap-open" : ""}" data-cat="${Utils.escapeHtml(c.name)}" aria-expanded="${isOpen}">
         <span class="ap-cat-main"><span class="ap-cat-name">${Utils.escapeHtml(catLabel(c.name))}</span>
         <span class="ap-cat-meta">${Utils.escapeHtml(metaLine(c))}</span></span>
+        <span class="ap-cat-pos" role="button" tabindex="0" data-action="catpos" title="Change where this category shows (admin and shop)">#${(cats || []).indexOf(c) + 1} ✎</span>
         <span class="ap-cat-go" aria-hidden="true">›</span></button>${isOpen ? `<div class="ap-body" data-body>${bodyHtml(c.name)}</div>` : ""}`;
   }
 
@@ -326,7 +341,7 @@ window.AdminProducts = (() => {
     if (!cats) list.innerHTML = skeleton(72);
     const ep = epoch;
     try {
-      const [c, ...rows] = await Promise.all([needCounts ? Api.get(CATS_URL) : cats, ...wanted.map((n) => Api.get(byUrl(n)))]);
+      const [c, , ...rows] = await Promise.all([needCounts ? Api.get(CATS_URL) : cats, loadDefaultCat(), ...wanted.map((n) => Api.get(byUrl(n)))]);
       cats = c;
       if (ep === epoch) wanted.forEach((n, i) => cache.set(n, rows[i]));
       if (seq === refreshSeq) render();
@@ -404,7 +419,9 @@ window.AdminProducts = (() => {
     const card = e.target.closest(".admin-product-card");
     if (!card) {
       const tile = e.target.closest(".ap-cat");
-      if (tile) toggleCategory(tile.dataset.cat);
+      if (!tile) return;
+      if (e.target.closest('[data-action="catpos"]')) openCategoryPosition(tile.dataset.cat);
+      else toggleCategory(tile.dataset.cat);
       return;
     }
     const id = Number(card.dataset.id);
@@ -487,6 +504,61 @@ window.AdminProducts = (() => {
     }
   }
 
+  /** Small box to choose where a whole category shows: 1 = first (right after "All" on the shop). Admin and shop follow. */
+  function openCategoryPosition(name) {
+    const current = (cats || []).findIndex((c) => c.name === name) + 1;
+    sheetRoot.innerHTML = `
+      <div class="overlay" data-role="overlay"></div>
+      <div class="sheet" role="dialog" aria-modal="true">
+        <div class="sheet-header"><h2>Category position</h2><button class="sheet-close" data-role="close">✕</button></div>
+        <form class="sheet-body" id="catPosForm">
+          <p class="hint"><b>${Utils.escapeHtml(catLabel(name))}</b> — there are ${(cats || []).length} categories.</p>
+          <div class="field">
+            <label>Position (1 = first, right after "All" on the shop)</label>
+            <input name="position" type="number" min="1" max="${(cats || []).length}" inputmode="numeric" required value="${current}" />
+          </div>
+          ${name ? `<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;">
+            <input type="checkbox" name="isDefault" ${defaultCat === name ? "checked" : ""} />
+            Open the shop on this category by default
+          </label>
+          <p class="hint">Customers who open the website start on this category instead of "All". They can still tap "All".</p>` : ""}
+        </form>
+        <div class="sheet-footer"><button class="btn btn-gold btn-block" id="saveCatPos" form="catPosForm">Save</button></div>
+      </div>`;
+    const close = () => (sheetRoot.innerHTML = "");
+    sheetRoot.querySelector('[data-role="overlay"]').addEventListener("click", close);
+    sheetRoot.querySelector('[data-role="close"]').addEventListener("click", close);
+    const form = sheetRoot.querySelector("#catPosForm");
+    const btn = sheetRoot.querySelector("#saveCatPos");
+    form.querySelector("input").select();
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const position = Number(form.position.value);
+      if (!position || position < 1) return form.position.focus();
+      const wantDefault = !!form.isDefault?.checked;
+      const moveIt = position !== current;
+      const defaultChanged = !!name && wantDefault !== (defaultCat === name);
+      if (!moveIt && !defaultChanged) return close();
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span> Saving...`;
+      try {
+        if (moveIt) await Api.put("/api/admin/products/categories/position", { name, position });
+        if (defaultChanged) {
+          await Api.put("/api/admin/products/default-category", { category: wantDefault ? name : "" });
+          defaultCat = wantDefault ? name : "";
+        }
+        Toast.show("Saved", "success");
+        close();
+        if (moveIt) refresh(true, [], true); // the tile order changed: keep the open categories' lists, read the tiles again
+        else render(); // only the star changed
+      } catch (err) {
+        Toast.show(err.message, "error");
+        btn.disabled = false;
+        btn.textContent = "Save";
+      }
+    });
+  }
+
   async function openForm(product) {
     const isEdit = !!product;
     if (!cats) {
@@ -550,8 +622,13 @@ window.AdminProducts = (() => {
           </div>
         </div>
         <div class="field">
+          <label>Position overall (1 = first of ALL products on the shop, whatever the category)</label>
+          <input name="overallPosition" type="number" min="1" inputmode="numeric" placeholder="Not used" />
+        </div>
+        <div class="field">
           <label>Position in its category (1 = shows first, empty = last)</label>
           <input name="displayOrder" type="number" min="1" inputmode="numeric" placeholder="Last" value="${position}" />
+          <p class="hint" id="posHint" hidden>Not used while "Position overall" is filled.</p>
         </div>
         ${!isEdit ? `<p class="hint">You can add a photo from the product list right after saving.</p>` : ""}
       </form>
@@ -580,12 +657,22 @@ window.AdminProducts = (() => {
     const form = sheetRoot.querySelector("#productForm");
     const saveBtn = sheetRoot.querySelector("#saveProductBtn");
     let positionTouched = false;
-    form.querySelector('[name="displayOrder"]').addEventListener("input", () => (positionTouched = true));
+    const catPos = form.querySelector('[name="displayOrder"]');
+    const overallPos = form.querySelector('[name="overallPosition"]');
+    const posHint = form.querySelector("#posHint");
+    catPos.addEventListener("input", () => (positionTouched = true));
+    // only one of the two positions is used: typing an overall position greys out the in-category one
+    overallPos.addEventListener("input", () => {
+      const on = overallPos.value.trim() !== "";
+      catPos.disabled = on;
+      posHint.hidden = !on;
+    });
 
     saveBtn.addEventListener("click", async (e) => {
       e.preventDefault();
       const data = new FormData(form);
       const category = readCategory(form);
+      const overall = Number(data.get("overallPosition")) || 0;
       // The number shown is the product's place in its OLD category; if it was moved to another category without
       // typing a new position, it simply goes to the end of the new one.
       const moved = isEdit && category.toLowerCase() !== (product.category || "").trim().toLowerCase();
@@ -602,6 +689,7 @@ window.AdminProducts = (() => {
         enabled: isEdit ? product.enabled : true,
         outOfStock: isEdit ? product.outOfStock : false,
         displayOrder: moved && !positionTouched ? 0 : Number(data.get("displayOrder")) || 0,
+        overallPosition: overall,
       };
 
       saveBtn.disabled = true;
@@ -614,7 +702,7 @@ window.AdminProducts = (() => {
         }
         Toast.show("Product saved", "success");
         close();
-        const samePlace = isEdit && !moved && String(Number(data.get("displayOrder")) || 0) === String(position);
+        const samePlace = isEdit && !moved && !overall && String(Number(data.get("displayOrder")) || 0) === String(position);
         if (samePlace) {
           // nothing moved (same category, same position): just show the new details — nothing to read again
           Object.assign(product, {
@@ -626,7 +714,8 @@ window.AdminProducts = (() => {
           if (el) el.outerHTML = card(product);
         } else {
           // moved: re-read only the categories involved; the tile numbers only change when the category does
-          refresh(true, [...new Set(isEdit ? [catKey(product), category] : [category])], !isEdit || moved);
+          // (an overall position can also change the ORDER of the category tiles, so the tiles are read again too)
+          refresh(true, [...new Set(isEdit ? [catKey(product), category] : [category])], !isEdit || moved || !!overall);
         }
       } catch (err) {
         Toast.show(err.message, "error");
