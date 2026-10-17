@@ -19,8 +19,13 @@ window.AdminProducts = (() => {
   });
 
   // ---- category picker: used by the add/edit form and by Bulk actions -------
-  // A dropdown: the hint "Select category", then "New category…", then the categories your products already use.
+  // Not a native <select>: on iPhone, the native picker is still closing when the text box asks for focus, so
+  // the keyboard never stays open. This list is made of our own buttons, so tapping "New category…" is a real tap
+  // and the text box can take focus right inside it — the keyboard opens and stays.
+  // The hint "Select category", then "New category…", then the categories your products already use.
   const NEW_CATEGORY = "__new__";
+  const BOX = "border:1.5px solid #e3dcc9;border-radius:var(--r-sm);background:#fff;box-sizing:border-box;width:100%;";
+  const CHEVRON = "url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23555' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E&quot;)";
 
   /** Distinct categories in use (case-insensitive), alphabetical, with how many products use each. */
   function categoryList() {
@@ -36,7 +41,7 @@ window.AdminProducts = (() => {
     return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  /** HTML for the picker. `current` = the category to preselect. With none, the box shows the grey hint
+  /** HTML for the picker. `current` = the category to preselect; with none, the box shows the grey hint
    * "Select category" — nothing is chosen for you. */
   function categoryFieldHtml(current) {
     const cats = categoryList();
@@ -45,48 +50,81 @@ window.AdminProducts = (() => {
       cats.push({ name: cur, n: 0 });
       cats.sort((a, b) => a.name.localeCompare(b.name));
     }
-    const options = cats
-      .map((c) => {
-        const on = cur && c.name.toLowerCase() === cur.toLowerCase();
-        return `<option value="${Utils.escapeHtml(c.name)}"${on ? " selected" : ""}>${Utils.escapeHtml(c.name)}</option>`;
-      })
-      .join("");
+    const shown = cats.find((c) => c.name.toLowerCase() === cur.toLowerCase());
+    const value = shown ? shown.name : "";
+    const opt = (v, text, on) =>
+      `<button type="button" role="option" data-value="${Utils.escapeHtml(v)}" aria-selected="${on}" style="display:block;width:100%;text-align:left;padding:12px 13px;font-size:16px;border:0;border-bottom:1px solid #f0ead9;background:${on ? "#f8f1dc" : "transparent"};color:inherit;font-weight:${on ? 700 : 400};cursor:pointer;">${Utils.escapeHtml(text)}</button>`;
     return `
-      <select data-role="cat-select" autocomplete="off" style="-webkit-appearance:none;appearance:none;padding-right:38px;background:#fff url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23555' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E&quot;) no-repeat right 14px center / 12px 8px;">
-        <option value="" disabled${cur ? "" : " selected"}>Select category</option>
-        <option value="${NEW_CATEGORY}">➕ New category…</option>
-        ${options}
-      </select>
-      <input data-role="cat-new" maxlength="60" placeholder="Type the new category name" style="margin-top:8px;display:none;" />`;
+      <div data-role="cat-pick" data-value="${Utils.escapeHtml(value)}">
+        <button type="button" data-role="cat-trigger" aria-haspopup="listbox" aria-expanded="false"
+          style="${BOX}display:flex;align-items:center;text-align:left;padding:11px 38px 11px 13px;font-size:16px;color:${value ? "inherit" : "#8a8575"};background:#fff ${CHEVRON} no-repeat right 14px center / 12px 8px;cursor:pointer;">
+          <span data-role="cat-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${Utils.escapeHtml(value || "Select category")}</span>
+        </button>
+        <div data-role="cat-list" role="listbox" hidden style="${BOX}margin-top:6px;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+          ${opt(NEW_CATEGORY, "➕ New category…", false)}
+          ${cats.map((c) => opt(c.name, c.name, !!value && c.name === value)).join("")}
+        </div>
+        <input data-role="cat-new" maxlength="60" placeholder="Type the new category name" autocomplete="off" style="margin-top:8px;display:none;" />
+      </div>`;
   }
 
+  function setCategoryValue(pick, value) {
+    const trigger = pick.querySelector('[data-role="cat-trigger"]');
+    const label = pick.querySelector('[data-role="cat-label"]');
+    const list = pick.querySelector('[data-role="cat-list"]');
+    const inp = pick.querySelector('[data-role="cat-new"]');
+    pick.dataset.value = value;
+    list.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.style.borderColor = "#e3dcc9";
+    const isNew = value === NEW_CATEGORY;
+    label.textContent = isNew ? "➕ New category…" : value || "Select category";
+    trigger.style.color = value ? "inherit" : "#8a8575";
+    list.querySelectorAll("[role=option]").forEach((o) => {
+      const on = !isNew && !!value && o.dataset.value === value;
+      o.setAttribute("aria-selected", on);
+      o.style.fontWeight = on ? "700" : "400";
+      o.style.background = on ? "#f8f1dc" : "transparent";
+    });
+    inp.style.display = isNew ? "" : "none";
+    // Right here, inside the person's own tap, so iPhone opens the keyboard and keeps it open.
+    if (isNew) inp.focus();
+  }
+
+  // one listener for every picker on the page (they are re-created each time a form opens)
+  document.addEventListener("click", (e) => {
+    const trigger = e.target.closest('[data-role="cat-trigger"]');
+    const option = e.target.closest('[data-role="cat-list"] [role="option"]');
+    if (option) {
+      e.preventDefault();
+      setCategoryValue(option.closest('[data-role="cat-pick"]'), option.dataset.value);
+      return;
+    }
+    document.querySelectorAll('[data-role="cat-pick"]').forEach((pick) => {
+      const list = pick.querySelector('[data-role="cat-list"]');
+      const t = pick.querySelector('[data-role="cat-trigger"]');
+      const open = trigger === t ? list.hidden : false; // tapping the box toggles; tapping elsewhere closes
+      list.hidden = !open;
+      t.setAttribute("aria-expanded", String(open));
+      t.style.borderColor = open ? "var(--gold)" : "#e3dcc9";
+    });
+  });
+
+  /** Makes the box exactly as tall as the other boxes in the same form. */
   function bindCategoryField(root) {
-    const sel = root.querySelector('[data-role="cat-select"]');
-    const inp = root.querySelector('[data-role="cat-new"]');
-    if (!sel || !inp) return;
-    // Phone browsers draw a plain dropdown shorter than a text box: make it exactly as tall as the other boxes.
+    const trigger = root.querySelector('[data-role="cat-trigger"]');
+    if (!trigger) return;
     const ref = root.querySelector('input:not([data-role="cat-new"]):not([type="checkbox"]):not([type="hidden"])');
     const h = ref ? ref.offsetHeight : 0;
-    if (h) sel.style.minHeight = h + "px";
-    sel.addEventListener("change", () => {
-      const isNew = sel.value === NEW_CATEGORY;
-      inp.style.display = isNew ? "" : "none";
-      // On a phone the dropdown's own picker is still closing at this moment; focusing the text box right now
-      // makes the keyboard open and shut in a flash. Wait until the picker is gone, then focus.
-      if (isNew) {
-        setTimeout(() => {
-          if (sel.value === NEW_CATEGORY && inp.isConnected) inp.focus();
-        }, 400);
-      }
-    });
+    if (h) trigger.style.minHeight = h + "px";
   }
 
   /** The chosen (or newly typed) category name; "" = none. A typed name that already exists (any capitals) reuses it. */
   function readCategory(root) {
-    const sel = root.querySelector('[data-role="cat-select"]');
-    const inp = root.querySelector('[data-role="cat-new"]');
-    if (!sel || !sel.value) return ""; // nothing chosen
-    if (sel.value !== NEW_CATEGORY) return sel.value;
+    const pick = root.querySelector('[data-role="cat-pick"]');
+    if (!pick || !pick.dataset.value) return ""; // nothing chosen
+    if (pick.dataset.value !== NEW_CATEGORY) return pick.dataset.value;
+    const inp = pick.querySelector('[data-role="cat-new"]');
     const typed = (inp ? inp.value : "").trim().replace(/\s+/g, " ");
     const hit = categoryList().find((c) => c.name.toLowerCase() === typed.toLowerCase());
     return hit ? hit.name : typed;
