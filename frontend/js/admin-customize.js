@@ -667,12 +667,16 @@ window.AdminCustomize = (() => {
         ).join("")
       )}
 
+      ${section("Email backup", '<div id="czBackupMount"></div>')}
+
       <div class="cz-savebar">
         <span class="cz-dirty" id="czDirty" hidden>Unsaved changes</span>
         <button type="button" class="btn btn-ghost btn-sm" data-action="reset">Reset to original</button>
         <button type="button" class="btn btn-gold" data-action="save" id="czSave" disabled>Save template</button>
         <button type="button" class="btn btn-dark" data-action="publish" id="czPublish">Save &amp; make live</button>
       </div>`;
+    // The Email backup section is built by admin-backup.js (its settings are saved by Save below).
+    if (window.AdminBackup) window.AdminBackup.mount(document.getElementById("czBackupMount"));
   }
 
   // ---- filling the form from cfg ------------------------------------------
@@ -779,10 +783,16 @@ window.AdminCustomize = (() => {
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
   }
 
+  /** Unsaved changes in the Email backup section (admin-backup.js). */
+  function emailDirty() {
+    return !!(window.AdminBackup && window.AdminBackup.isDirty());
+  }
+
   function markDirty(value = true) {
     dirty = value;
-    document.getElementById("czSave").disabled = !(dirty || !tplSaved);
-    document.getElementById("czDirty").hidden = !dirty;
+    const pending = dirty || emailDirty();
+    document.getElementById("czSave").disabled = !(pending || !tplSaved);
+    document.getElementById("czDirty").hidden = !pending;
   }
 
   function edited() {
@@ -1034,6 +1044,17 @@ window.AdminCustomize = (() => {
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> Saving...`;
     try {
+      // Email backup settings are saved together with the template (they are not part of it).
+      if (emailDirty()) {
+        if (!(await window.AdminBackup.save())) {
+          btn.disabled = false;
+          return false;
+        }
+        if (!dirty && tplSaved) {
+          markDirty(dirty); // nothing else to save
+          return true;
+        }
+      }
       const payload = { ...cfg, heroHeading: (cfg.heroHeading || "").replace(/\s+$/, "") };
       const res = await Api.put(`/api/admin/site/templates/${slot}`, { name: tplName, config: payload });
       applyDetail(res);
@@ -1063,7 +1084,7 @@ window.AdminCustomize = (() => {
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> Publishing...`;
     try {
-      if ((dirty || !tplSaved) && !(await save())) return;
+      if ((dirty || !tplSaved || emailDirty()) && !(await save())) return;
       const res = await Api.post(`/api/admin/site/templates/${slot}/primary`);
       applyDetail(res);
       fill();
@@ -1176,5 +1197,11 @@ window.AdminCustomize = (() => {
     }
   }
 
-  return { refresh };
+  return {
+    refresh,
+    // admin-backup.js calls this when its (unsaved) settings change, to light up the Save button.
+    refreshSaveState: () => {
+      if (document.getElementById("czSave")) markDirty(dirty);
+    },
+  };
 })();
