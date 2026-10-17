@@ -18,6 +18,70 @@ window.AdminProducts = (() => {
     loaded = false;
   });
 
+  // ---- category picker: used by the add/edit form and by Bulk actions -------
+  // A dropdown: the hint "Select category", then "New category…", then the categories your products already use.
+  const NEW_CATEGORY = "__new__";
+
+  /** Distinct categories in use (case-insensitive), alphabetical, with how many products use each. */
+  function categoryList() {
+    const found = new Map();
+    for (const p of products) {
+      const name = (p.category || "").trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      const hit = found.get(key);
+      if (hit) hit.n++;
+      else found.set(key, { name, n: 1 });
+    }
+    return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** HTML for the picker. `current` = the category to preselect. With none, the box shows the grey hint
+   * "Select category" — nothing is chosen for you. */
+  function categoryFieldHtml(current) {
+    const cats = categoryList();
+    const cur = (current || "").trim();
+    if (cur && !cats.some((c) => c.name.toLowerCase() === cur.toLowerCase())) {
+      cats.push({ name: cur, n: 0 });
+      cats.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    const options = cats
+      .map((c) => {
+        const on = cur && c.name.toLowerCase() === cur.toLowerCase();
+        return `<option value="${Utils.escapeHtml(c.name)}"${on ? " selected" : ""}>${Utils.escapeHtml(c.name)}</option>`;
+      })
+      .join("");
+    return `
+      <select data-role="cat-select" autocomplete="off">
+        <option value="" disabled${cur ? "" : " selected"}>Select category</option>
+        <option value="${NEW_CATEGORY}">➕ New category…</option>
+        ${options}
+      </select>
+      <input data-role="cat-new" maxlength="60" placeholder="Type the new category name" style="margin-top:8px;display:none;" />`;
+  }
+
+  function bindCategoryField(root) {
+    const sel = root.querySelector('[data-role="cat-select"]');
+    const inp = root.querySelector('[data-role="cat-new"]');
+    if (!sel || !inp) return;
+    sel.addEventListener("change", () => {
+      const isNew = sel.value === NEW_CATEGORY;
+      inp.style.display = isNew ? "" : "none";
+      if (isNew) inp.focus();
+    });
+  }
+
+  /** The chosen (or newly typed) category name; "" = none. A typed name that already exists (any capitals) reuses it. */
+  function readCategory(root) {
+    const sel = root.querySelector('[data-role="cat-select"]');
+    const inp = root.querySelector('[data-role="cat-new"]');
+    if (!sel || !sel.value) return ""; // nothing chosen
+    if (sel.value !== NEW_CATEGORY) return sel.value;
+    const typed = (inp ? inp.value : "").trim().replace(/\s+/g, " ");
+    const hit = categoryList().find((c) => c.name.toLowerCase() === typed.toLowerCase());
+    return hit ? hit.name : typed;
+  }
+
   function priceLine(p) {
     const v1 = `${Utils.escapeHtml(p.variant1Label)}: ${Utils.formatMoney(p.variant1Price)}`;
     const v2 = p.variant2Label ? ` · ${Utils.escapeHtml(p.variant2Label)}: ${Utils.formatMoney(p.variant2Price)}` : "";
@@ -182,7 +246,7 @@ window.AdminProducts = (() => {
         </div>
         <div class="field">
           <label>Category</label>
-          <input name="category" value="${isEdit ? Utils.escapeHtml(product.category || "") : "Chicken Cuts"}" placeholder="e.g. Chicken Cuts, Eggs" />
+          ${categoryFieldHtml(isEdit ? product.category : "")}
         </div>
         <div class="field">
           <label>Size 1 label</label>
@@ -236,6 +300,7 @@ window.AdminProducts = (() => {
       </div>`;
 
     const close = () => (sheetRoot.innerHTML = "");
+    bindCategoryField(sheetRoot);
     sheetRoot.querySelector('[data-role="overlay"]').addEventListener("click", close);
     sheetRoot.querySelector('[data-role="close"]').addEventListener("click", close);
 
@@ -253,7 +318,7 @@ window.AdminProducts = (() => {
       const payload = {
         name: data.get("name")?.trim(),
         description: data.get("description")?.trim() || null,
-        category: data.get("category")?.trim() || null,
+        category: readCategory(form) || null,
         variant1Label: data.get("variant1Label")?.trim(),
         variant1Price: Number(data.get("variant1Price")),
         variant1Mrp: data.get("variant1Mrp") ? Number(data.get("variant1Mrp")) : null,
@@ -286,5 +351,6 @@ window.AdminProducts = (() => {
 
   document.getElementById("addProductFab").addEventListener("click", () => openForm(null));
 
-  return { refresh };
+  // getAll + the category picker are also used by Bulk actions (admin-product-bulk.js)
+  return { refresh, getAll: () => products, categories: categoryList, categoryFieldHtml, bindCategoryField, readCategory };
 })();
