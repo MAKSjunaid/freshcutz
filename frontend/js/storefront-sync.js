@@ -28,6 +28,35 @@
   // is completely normal, not a failure.
   let initialLoadTimer = null;
 
+  /* The category tab the admin chose to open the shop on ("" = the normal "All" tab). It is looked up once per
+   * page load, next to the catalog stream, and applied once — only if the customer has not already tapped a
+   * different tab — so later live updates never switch tabs under them. undefined = not known yet. */
+  let defaultCategory;
+  let defaultApplied = false;
+
+  function applyDefaultCategory(products, redraw) {
+    const S = window.Storefront;
+    if (defaultApplied || defaultCategory === undefined || !S || !products.length) return;
+    defaultApplied = true;
+    if (!defaultCategory || S.getActiveCategory() !== "All") return;
+    if (typeof SiteCustomize !== "undefined" && !SiteCustomize.on("showCategories")) return; // the category bar is switched off
+    // a default that no longer has any visible product would show an empty shop: fall back to "All"
+    if (!products.some((p) => p.enabled && p.category === defaultCategory)) return;
+    S.setActiveCategory(defaultCategory, redraw);
+  }
+
+  Api.get("/api/store/default-category")
+    .then((r) => {
+      defaultCategory = (r && r.category) || "";
+    })
+    .catch(() => {
+      defaultCategory = ""; // couldn't ask: just open on "All"
+    })
+    .then(() => {
+      const S = window.Storefront;
+      if (S) applyDefaultCategory(S.getAllProducts(), true); // the catalog got here first
+    });
+
   function visibleIdSet(products, activeCategory) {
     return new Set(
       products.filter((p) => p.enabled && (activeCategory === "All" || p.category === activeCategory)).map((p) => p.id)
@@ -75,6 +104,7 @@
     if (snapshot === lastProductsSnapshot) return; // nothing changed
     lastProductsSnapshot = snapshot;
 
+    applyDefaultCategory(fresh, false); // before the first drawing, so there is no flash of "All"
     const activeCategory = S.getActiveCategory();
     const prevVisible = visibleIdSet(S.getAllProducts(), activeCategory);
     S.setAllProducts(fresh);

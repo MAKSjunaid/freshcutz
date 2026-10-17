@@ -85,7 +85,8 @@ public class ProductService {
         product.setDisplayOrder(nextOrder()); // goes last first; reposition() below moves it if a position was asked for
         Product saved = productRepository.saveAndFlush(product);
         // it was just put last (above); only a requested position needs the category's other products looked at
-        if (request.getDisplayOrder() > 0) reposition(saved.getId(), saved.getCategory(), request.getDisplayOrder());
+        if (request.getOverallPosition() > 0) repositionOverall(saved.getId(), request.getOverallPosition());
+        else if (request.getDisplayOrder() > 0) reposition(saved.getId(), saved.getCategory(), request.getDisplayOrder());
         return saved.getId();
     }
 
@@ -119,7 +120,9 @@ public class ProductService {
                 });
         if (rows == 0) throw new ResourceNotFoundException("Product " + id + " not found");
 
-        reposition(id, category, request.getDisplayOrder());
+        // an overall position wins over the position inside the category (the form only lets one of them be filled)
+        if (request.getOverallPosition() > 0) repositionOverall(id, request.getOverallPosition());
+        else reposition(id, category, request.getDisplayOrder());
         StorefrontCache.productChanged(null); // list changed; the photo did not
     }
 
@@ -130,14 +133,45 @@ public class ProductService {
                 "SELECT id, display_order FROM products WHERE COALESCE(TRIM(category), '') = ? ORDER BY display_order, id",
                 (rs, i) -> new ProductOrdering.Member(rs.getLong(1), rs.getInt(2)),
                 category == null ? "" : category);
-        ProductOrdering.Plan plan = ProductOrdering.plan(members, id, position);
-        if (plan.changes().isEmpty()) return;
+        apply(ProductOrdering.plan(members, id, position));
+    }
 
+    /** Places the product at {@code position} (1 = first of ALL products) in the whole list, whatever its category.
+     * The shop shows products (and orders its category chips) by this number, so position 1 puts the product first
+     * on the customer site even when its category used to be last. Everything else keeps its relative order. */
+    private void repositionOverall(Long id, int position) {
+        List<ProductOrdering.Member> members = jdbc.query(
+                "SELECT id, display_order FROM products ORDER BY display_order, id",
+                (rs, i) -> new ProductOrdering.Member(rs.getLong(1), rs.getInt(2)));
+        apply(ProductOrdering.plan(members, id, position));
+    }
+
+    private void apply(ProductOrdering.Plan plan) {
+        write(plan.changes());
+    }
+
+    private void write(Map<Long, Integer> changes) {
+        if (changes.isEmpty()) return;
         List<Object[]> batch = new ArrayList<>();
-        for (Map.Entry<Long, Integer> e : plan.changes().entrySet()) {
+        for (Map.Entry<Long, Integer> e : changes.entrySet()) {
             batch.add(new Object[]{e.getValue(), e.getKey()});
         }
         jdbc.batchUpdate("UPDATE products SET display_order = ? WHERE id = ?", batch);
+    }
+
+    /** Moves a whole category to {@code position} (1 = first, right after "All" on the shop). Returns false when
+     * nothing needed to change. Categories are ordered by their earliest product, so this renumbers the products. */
+    @Transactional
+    public boolean moveCategory(String name, int position) {
+        String key = name == null ? "" : name.trim();
+        List<ProductOrdering.Row> rows = jdbc.query(
+                "SELECT id, COALESCE(TRIM(category), ''), display_order FROM products ORDER BY display_order, id",
+                (rs, i) -> new ProductOrdering.Row(rs.getLong(1), rs.getString(2), rs.getInt(3)));
+        Map<Long, Integer> changes = ProductOrdering.planCategories(rows, key, position);
+        if (changes.isEmpty()) return false;
+        write(changes);
+        StorefrontCache.productChanged(null); // list order changed; no photo did
+        return true;
     }
 
     @Transactional
