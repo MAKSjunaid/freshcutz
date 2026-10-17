@@ -126,6 +126,35 @@ public class ProductImageProcessor {
         return new ProcessedImage(smallest, "image/jpeg"); // practically never reached; still tiny
     }
 
+    /** Longest side of the customer-card photo. A product card is about 180 CSS pixels wide, so 480 px is sharp even
+     * on a 2.5x phone screen, at a fraction of the full photo's bytes. */
+    private static final int MEDIUM_MAX_DIMENSION = 480;
+    /** The customer-card photo should stay under this; quality steps down until it fits (or the lowest is reached). */
+    public static final int MEDIUM_TARGET_BYTES = 30 * 1024;
+    private static final float[] MEDIUM_QUALITIES = {0.74f, 0.66f, 0.58f, 0.5f};
+
+    /** The photo for the customer website's product cards: at most 480 px on its longest side, re-encoded as an
+     * optimised JPEG, stepping the quality down until it is about 30 KB or less. Returns null when the photo can't
+     * be decoded (e.g. WEBP) — then the caller simply serves the stored photo itself. */
+    public ProcessedImage medium(byte[] stored, String storedContentType) {
+        BufferedImage source;
+        try {
+            source = ImageIO.read(new ByteArrayInputStream(stored));
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+        if (source == null) return null;
+
+        BufferedImage scaled = scaleDown(source, MEDIUM_MAX_DIMENSION);
+        byte[] best = null;
+        for (float quality : MEDIUM_QUALITIES) {
+            byte[] jpeg = toJpeg(scaled, quality, true);
+            if (best == null || jpeg.length < best.length) best = jpeg;
+            if (jpeg.length <= MEDIUM_TARGET_BYTES) break;
+        }
+        return new ProcessedImage(best, "image/jpeg");
+    }
+
     private BufferedImage scaleDown(BufferedImage source, int maxDimension) {
         int width = source.getWidth();
         int height = source.getHeight();
