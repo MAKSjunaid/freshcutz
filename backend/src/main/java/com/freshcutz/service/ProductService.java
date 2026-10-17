@@ -1,24 +1,48 @@
 package com.freshcutz.service;
 
+import com.freshcutz.dto.ProductListRow;
 import com.freshcutz.dto.ProductRequest;
 import com.freshcutz.dto.ProductResponse;
 import com.freshcutz.entity.Product;
 import com.freshcutz.exception.ResourceNotFoundException;
 import com.freshcutz.repository.ProductRepository;
+import com.freshcutz.util.ProductImageProcessor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * Product reads and edits.
+ *
+ * <p>Edits are small plain-SQL statements (a flag, a price, a position) instead of loading a product with its
+ * photo bytes and writing the whole row back; and placing a product only looks at the products of ITS category
+ * (see ProductOrdering), never at the whole catalog. A product's {@code updated_at} is only changed when its
+ * photo changes — it is the photo's cache-buster in the image link.
+ */
 @Service
 public class ProductService {
 
-    private final ProductRepository productRepository;
+    /** A preview bigger than this is not stored (it only happens for a photo that could not be shrunk).
+     * (Previews are normally ProductImageProcessor.THUMB_MAX_BYTES or less.) */
+    private static final int MAX_STORED_THUMB_BYTES = 4096;
 
-    public ProductService(ProductRepository productRepository) {
+    private final ProductRepository productRepository;
+    private final JdbcTemplate jdbc;
+    private final ProductImageProcessor imageProcessor;
+
+    public ProductService(ProductRepository productRepository, JdbcTemplate jdbc, ProductImageProcessor imageProcessor) {
         this.productRepository = productRepository;
+        this.jdbc = jdbc;
+        this.imageProcessor = imageProcessor;
     }
 
     /** Deliberately uses listViewForCustomers() (a lighter row that never
@@ -35,8 +59,8 @@ public class ProductService {
                 .collect(Collectors.toList()));
     }
 
-    /** Same reasoning as listForCustomers() above — the admin Products tab
-     * shows the same images/prices and hits the same query shape. */
+    /** Every product (no photo bytes). The Products page no longer uses this — it asks AdminCatalogService for
+     * one category at a time — but "Add photos" still needs the whole list to match photos to products. */
     @Transactional(readOnly = true)
     public List<ProductResponse> listForAdmin() {
         return productRepository.listViewForAdmin().stream()
@@ -45,68 +69,114 @@ public class ProductService {
     }
 
     @Transactional
-    public ProductResponse create(ProductRequest request) {
+    public Long create(ProductRequest request) {
         Product product = new Product();
-        applyRequest(product, request);
+        product.setName(request.getName());
+        product.setDescription(request.getDescription());
+        product.setCategory(clean(request.getCategory()));
+        product.setVariant1Label(request.getVariant1Label());
+        product.setVariant1Price(request.getVariant1Price());
+        product.setVariant1Mrp(request.getVariant1Mrp());
+        product.setVariant2Label(request.getVariant2Label());
+        product.setVariant2Price(request.getVariant2Price());
+        product.setVariant2Mrp(request.getVariant2Mrp());
         product.setEnabled(true);
-        Product saved = productRepository.save(product);
-        reposition(saved, request.getDisplayOrder());
-        return ProductResponse.from(saved);
+        product.setOutOfStock(request.isOutOfStock());
+        product.setDisplayOrder(nextOrder()); // goes last first; reposition() below moves it if a position was asked for
+        Product saved = productRepository.saveAndFlush(product);
+        // it was just put last (above); only a requested position needs the category's other products looked at
+        if (request.getDisplayOrder() > 0) reposition(saved.getId(), saved.getCategory(), request.getDisplayOrder());
+        return saved.getId();
     }
 
     @Transactional
-    public ProductResponse update(Long id, ProductRequest request) {
-        Product product = getEntity(id);
-        applyRequest(product, request);
-        Product saved = productRepository.save(product);
-        reposition(saved, request.getDisplayOrder());
-        return ProductResponse.from(saved);
+    public void update(Long id, ProductRequest request) {
+        String category = clean(request.getCategory());
+        int rows = jdbc.update("UPDATE products SET name = ?, description = ?, category = ?, "
+                        + "variant1_label = ?, variant1_price = ?, variant1_mrp = ?, "
+                        + "variant2_label = ?, variant2_price = ?, variant2_mrp = ?, "
+                        + "enabled = ?, out_of_stock = ?, "
+                        // moved to another category -> goes to the end of the whole list first (the old value of
+                        // "category" is what the right-hand side sees); reposition() then places it
+                        + "display_order = CASE WHEN COALESCE(TRIM(category), '') = ? THEN display_order "
+                        + "ELSE (SELECT COALESCE(MAX(display_order), -1) + 1 FROM products) END "
+                        + "WHERE id = ?",
+                ps -> {
+                    int i = 1;
+                    i = str(ps, i, request.getName());
+                    i = str(ps, i, request.getDescription());
+                    i = str(ps, i, category);
+                    i = str(ps, i, request.getVariant1Label());
+                    i = num(ps, i, request.getVariant1Price());
+                    i = num(ps, i, request.getVariant1Mrp());
+                    i = str(ps, i, request.getVariant2Label());
+                    i = num(ps, i, request.getVariant2Price());
+                    i = num(ps, i, request.getVariant2Mrp());
+                    ps.setBoolean(i++, request.isEnabled());
+                    ps.setBoolean(i++, request.isOutOfStock());
+                    ps.setString(i++, category == null ? "" : category);
+                    ps.setLong(i, id);
+                });
+        if (rows == 0) throw new ResourceNotFoundException("Product " + id + " not found");
+
+        reposition(id, category, request.getDisplayOrder());
+        StorefrontCache.productChanged(null); // list changed; the photo did not
     }
 
-    /** Implements "position 1 = shows first" semantics: the saved product is
-     * inserted at the requested 1-based position among every other product,
-     * and everyone else's displayOrder shifts to make room — instead of the
-     * confusing raw-sort-key-with-ties behaviour of just storing the number
-     * exactly as typed. */
-    private void reposition(Product moved, Integer requestedPosition) {
-        List<Product> others = productRepository.findAllByOrderByDisplayOrderAscIdAsc().stream()
-                .filter(p -> !p.getId().equals(moved.getId()))
-                .collect(Collectors.toList());
+    /** Places the product at {@code position} (1 = first, 0 / empty = last) among the products of its category.
+     * Only that category's rows are read, and only rows whose number really changes are written. */
+    private void reposition(Long id, String category, Integer position) {
+        List<ProductOrdering.Member> members = jdbc.query(
+                "SELECT id, display_order FROM products WHERE COALESCE(TRIM(category), '') = ? ORDER BY display_order, id",
+                (rs, i) -> new ProductOrdering.Member(rs.getLong(1), rs.getInt(2)),
+                category == null ? "" : category);
+        ProductOrdering.Plan plan = ProductOrdering.plan(members, id, position);
+        if (plan.changes().isEmpty()) return;
 
-        int position = requestedPosition == null ? others.size() + 1 : requestedPosition;
-        int index = position - 1;
-        if (index < 0) index = 0;
-        if (index > others.size()) index = others.size();
-
-        List<Product> ordered = new ArrayList<>(others);
-        ordered.add(index, moved);
-
-        for (int i = 0; i < ordered.size(); i++) {
-            ordered.get(i).setDisplayOrder(i);
+        List<Object[]> batch = new ArrayList<>();
+        for (Map.Entry<Long, Integer> e : plan.changes().entrySet()) {
+            batch.add(new Object[]{e.getValue(), e.getKey()});
         }
-        productRepository.saveAll(ordered);
+        jdbc.batchUpdate("UPDATE products SET display_order = ? WHERE id = ?", batch);
     }
 
     @Transactional
-    public ProductResponse setEnabled(Long id, boolean enabled) {
-        Product product = getEntity(id);
-        product.setEnabled(enabled);
-        return ProductResponse.from(productRepository.save(product));
+    public void setEnabled(Long id, boolean enabled) {
+        setFlag("enabled", id, enabled);
     }
 
     @Transactional
-    public ProductResponse setOutOfStock(Long id, boolean outOfStock) {
-        Product product = getEntity(id);
-        product.setOutOfStock(outOfStock);
-        return ProductResponse.from(productRepository.save(product));
+    public void setOutOfStock(Long id, boolean outOfStock) {
+        setFlag("out_of_stock", id, outOfStock);
     }
 
+    /** {@code column} is always one of two fixed names from the callers above, never user input. */
+    private void setFlag(String column, Long id, boolean value) {
+        int rows = jdbc.update("UPDATE products SET " + column + " = ? WHERE id = ?", value, id);
+        if (rows == 0) throw new ResourceNotFoundException("Product " + id + " not found");
+        StorefrontCache.productChanged(null);
+    }
+
+    /** Saves a new photo together with its tiny admin preview (about 1 KB), in one statement. */
     @Transactional
     public ProductResponse updateImage(Long id, byte[] imageData, String contentType) {
-        Product product = getEntity(id);
-        product.setImageData(imageData);
-        product.setImageContentType(contentType);
-        return ProductResponse.from(productRepository.save(product));
+        byte[] thumb = makeThumb(imageData, contentType);
+        int rows = jdbc.update("UPDATE products SET image_data = ?, image_content_type = ?, preview_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                ps -> {
+                    ps.setBytes(1, imageData);
+                    ps.setString(2, contentType);
+                    if (thumb == null) ps.setNull(3, Types.BINARY); else ps.setBytes(3, thumb);
+                    ps.setLong(4, id);
+                });
+        if (rows == 0) throw new ResourceNotFoundException("Product " + id + " not found");
+        StorefrontCache.productChanged(id); // photo changed: drop the cached photo + thumbnail too
+        return fetchRow(id);
+    }
+
+    /** The tiny preview for a photo, or null when the photo can't be decoded (then the admin page just shows the photo itself). */
+    private byte[] makeThumb(byte[] photo, String contentType) {
+        ProductImageProcessor.ProcessedImage small = imageProcessor.thumbnail(photo, contentType);
+        return small.data().length <= MAX_STORED_THUMB_BYTES ? small.data() : null;
     }
 
     /** A product's photo for ProductController's image endpoint, served from
@@ -114,11 +184,39 @@ public class ProductService {
      * when the product has no photo. No @Transactional on purpose, same
      * reason as listForCustomers(): a cache hit must not touch the database. */
     public StorefrontCache.ProductImage getImage(Long id) {
-        return StorefrontCache.image(id, () -> {
-            Product product = getEntity(id);
-            if (product.getImageData() == null) return null;
-            return new StorefrontCache.ProductImage(product.getImageData(), product.getImageContentType());
+        return StorefrontCache.image(id, () -> readImage(id));
+    }
+
+    /** The tiny admin preview of a product's photo (about 1 KB). Read from its own database column, so the
+     * full photo is not touched; kept in memory afterwards. A photo uploaded before this existed — or one whose
+     * preview is bigger than the current limit — gets a fresh preview made once from the photo and saved, never
+     * again. Returns null when the product has no photo. */
+    public StorefrontCache.ProductImage getThumb(Long id) {
+        return StorefrontCache.thumb(id, () -> {
+            List<byte[]> stored = jdbc.query("SELECT preview_data FROM products WHERE id = ?", (rs, i) -> rs.getBytes(1), id);
+            if (!stored.isEmpty() && stored.get(0) != null && stored.get(0).length <= ProductImageProcessor.THUMB_MAX_BYTES) {
+                return new StorefrontCache.ProductImage(stored.get(0), "image/jpeg");
+            }
+            StorefrontCache.ProductImage full = StorefrontCache.peekImage(id);
+            if (full == null) full = readImage(id);
+            if (full == null) return null;
+            byte[] thumb = makeThumb(full.data(), full.contentType());
+            if (thumb == null) return full; // can't be shrunk (e.g. WEBP): show the photo itself
+            // never overwrites a small preview that a photo upload saved in the meantime
+            jdbc.update("UPDATE products SET preview_data = ? WHERE id = ? AND (preview_data IS NULL OR OCTET_LENGTH(preview_data) > ?)",
+                    thumb, id, ProductImageProcessor.THUMB_MAX_BYTES);
+            return new StorefrontCache.ProductImage(thumb, "image/jpeg");
         });
+    }
+
+    private StorefrontCache.ProductImage readImage(Long id) {
+        List<StorefrontCache.ProductImage> rows = jdbc.query(
+                "SELECT image_data, image_content_type FROM products WHERE id = ?",
+                (rs, i) -> {
+                    byte[] data = rs.getBytes(1);
+                    return data == null ? null : new StorefrontCache.ProductImage(data, rs.getString(2));
+                }, id);
+        return rows.isEmpty() ? null : rows.get(0);
     }
 
     /** Public accessor for ProductController's image-streaming endpoint —
@@ -131,8 +229,9 @@ public class ProductService {
 
     @Transactional
     public void delete(Long id) {
-        Product product = getEntity(id);
-        productRepository.delete(product);
+        int rows = jdbc.update("DELETE FROM products WHERE id = ?", id);
+        if (rows == 0) throw new ResourceNotFoundException("Product " + id + " not found");
+        StorefrontCache.productChanged(id);
     }
 
     Product getEntity(Long id) {
@@ -140,17 +239,34 @@ public class ProductService {
                 .orElseThrow(() -> new ResourceNotFoundException("Product " + id + " not found"));
     }
 
-    private void applyRequest(Product product, ProductRequest request) {
-        product.setName(request.getName());
-        product.setDescription(request.getDescription());
-        product.setCategory(request.getCategory());
-        product.setVariant1Label(request.getVariant1Label());
-        product.setVariant1Price(request.getVariant1Price());
-        product.setVariant1Mrp(request.getVariant1Mrp());
-        product.setVariant2Label(request.getVariant2Label());
-        product.setVariant2Price(request.getVariant2Price());
-        product.setVariant2Mrp(request.getVariant2Mrp());
-        product.setEnabled(request.isEnabled());
-        product.setOutOfStock(request.isOutOfStock());
+    // ---- helpers -------------------------------------------------------
+
+    private ProductResponse fetchRow(Long id) {
+        List<ProductListRow> rows = jdbc.query("SELECT " + ProductRows.COLUMNS + " FROM products WHERE id = ?",
+                ProductRows.MAPPER, id);
+        if (rows.isEmpty()) throw new ResourceNotFoundException("Product " + id + " not found");
+        return ProductResponse.from(rows.get(0));
+    }
+
+    private int nextOrder() {
+        Integer next = jdbc.queryForObject("SELECT COALESCE(MAX(display_order), -1) + 1 FROM products", Integer.class);
+        return next == null ? 0 : next;
+    }
+
+    /** Trimmed; blank becomes null (= "no category"). */
+    private static String clean(String category) {
+        if (category == null) return null;
+        String t = category.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    private static int str(PreparedStatement ps, int i, String v) throws SQLException {
+        if (v == null) ps.setNull(i, Types.VARCHAR); else ps.setString(i, v);
+        return i + 1;
+    }
+
+    private static int num(PreparedStatement ps, int i, BigDecimal v) throws SQLException {
+        if (v == null) ps.setNull(i, Types.NUMERIC); else ps.setBigDecimal(i, v);
+        return i + 1;
     }
 }
