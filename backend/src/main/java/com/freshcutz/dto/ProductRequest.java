@@ -40,5 +40,10 @@ public class ProductRequest {
 
     private boolean outOfStock = false;
 
+    /** Place inside its own category: 1 = first, 0 / empty = last. */
     private int displayOrder = 0;
+
+    /** Place among ALL products whatever the category (1 = first of everything, shown first on the shop).
+     * 0 / empty = not used. When it is set, {@code displayOrder} is ignored. */
+    private int overallPosition = 0;
 }
