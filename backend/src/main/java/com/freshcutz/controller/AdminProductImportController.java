@@ -45,7 +45,7 @@ public class AdminProductImportController {
         }
         if (result.created > 0) {
             // one catalog push to open storefront tabs, after everything is saved
-            broadcastService.broadcastProducts(productService.listForCustomers());
+            broadcastService.broadcastProductsIfAny(productService::listForCustomers);
         }
         return result.toMap();
     }
