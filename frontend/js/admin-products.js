@@ -71,7 +71,13 @@ window.AdminProducts = (() => {
     sel.addEventListener("change", () => {
       const isNew = sel.value === NEW_CATEGORY;
       inp.style.display = isNew ? "" : "none";
-      if (isNew) inp.focus();
+      // On a phone the dropdown's own picker is still closing at this moment; focusing the text box right now
+      // makes the keyboard open and shut in a flash. Wait until the picker is gone, then focus.
+      if (isNew) {
+        setTimeout(() => {
+          if (sel.value === NEW_CATEGORY && inp.isConnected) inp.focus();
+        }, 400);
+      }
     });
   }
 
