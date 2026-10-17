@@ -26,6 +26,7 @@
 <link rel="stylesheet" href="css/admin-customize.css?v=7" />
 <link rel="stylesheet" href="css/admin-bottomnav.css?v=3" />
 <link rel="stylesheet" href="css/admin-menu.css?v=3" />
+<link rel="stylesheet" href="css/admin-backup.css?v=3" />
 </head>
 <body class="admin">
 
@@ -67,6 +68,10 @@
             <button class="btn btn-ghost btn-sm store-sched-btn" id="storeScheduleBtn" type="button" title="Open and close automatically">⏰</button>
           </div>
           <button class="btn btn-ghost btn-sm push-toggle-btn" id="pushToggleBtn" hidden title="Enable order alerts on this device">🔔</button>
+          <button class="btn btn-ghost btn-sm backup-top-btn" id="backupNowBtn" type="button" title="Email a backup now">
+            <span class="bk-ico" aria-hidden="true">📧</span>
+            <span class="bk-text"><span class="bk-label">Email backup now</span><span class="bk-sub" id="backupNowSub"></span></span>
+          </button>
           <button class="btn btn-ghost btn-sm" id="logoutBtn" type="button" aria-label="Log out" title="Log out"><span class="lo-text">Log out</span><span class="lo-icon" aria-hidden="true">⏻</span></button>
         </div>
         <!-- Phones: the switch, ⏰, 🔔 and Log out above live in a drop-down opened by
@@ -235,7 +240,8 @@
   <script src="js/admin-sales-customers.js"></script>
   <script src="js/admin-items.js?v=2"></script>
   <script src="js/site-elements.js?v=5"></script>
-  <script src="js/admin-customize.js?v=15"></script>
+  <script src="js/admin-customize.js?v=16"></script>
+  <script src="js/admin-backup.js?v=8"></script>
   <script src="js/admin-header.js?v=3"></script>
   <script src="js/admin-bottomnav.js?v=2"></script>
   <script src="js/admin-menu.js?v=2"></script>
