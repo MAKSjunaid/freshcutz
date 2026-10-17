@@ -52,7 +52,7 @@ window.AdminProducts = (() => {
       })
       .join("");
     return `
-      <select data-role="cat-select" autocomplete="off">
+      <select data-role="cat-select" autocomplete="off" style="-webkit-appearance:none;appearance:none;padding-right:38px;background:#fff url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23555' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E&quot;) no-repeat right 14px center / 12px 8px;">
         <option value="" disabled${cur ? "" : " selected"}>Select category</option>
         <option value="${NEW_CATEGORY}">➕ New category…</option>
         ${options}
@@ -64,6 +64,10 @@ window.AdminProducts = (() => {
     const sel = root.querySelector('[data-role="cat-select"]');
     const inp = root.querySelector('[data-role="cat-new"]');
     if (!sel || !inp) return;
+    // Phone browsers draw a plain dropdown shorter than a text box: make it exactly as tall as the other boxes.
+    const ref = root.querySelector('input:not([data-role="cat-new"]):not([type="checkbox"]):not([type="hidden"])');
+    const h = ref ? ref.offsetHeight : 0;
+    if (h) sel.style.minHeight = h + "px";
     sel.addEventListener("change", () => {
       const isNew = sel.value === NEW_CATEGORY;
       inp.style.display = isNew ? "" : "none";
