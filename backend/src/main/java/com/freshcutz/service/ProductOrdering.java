@@ -21,6 +21,9 @@ final class ProductOrdering {
     /** A product of the category with its current display_order. */
     record Member(long id, int order) {}
 
+    /** A product with its category (trimmed, "" = none) and current display_order, for category moves. */
+    record Row(long id, String category, int order) {}
+
     /** What to write: only the products whose number really changes. {@code movedOrder} = the moved product's final number. */
     record Plan(Map<Long, Integer> changes, int movedOrder) {}
 
@@ -58,5 +61,37 @@ final class ProductOrdering {
             if (m.order() != slots[i]) changes.put(m.id(), slots[i]);
         }
         return new Plan(changes, movedOrder);
+    }
+
+    /**
+     * Moves a whole category to {@code position} (1 = first category on the shop, right after "All").
+     *
+     * <p>The shop and the admin order categories by their earliest product, so the way to move one is to
+     * renumber the products: categories are laid out in their new order, each keeping its products' own
+     * order, and everything gets the numbers 0, 1, 2, ... Only products whose number really changes are returned.
+     *
+     * @param rows     every product, sorted by (display_order, id)
+     * @param category the category to move ("" = products without a category)
+     * @param position 1 = first. Smaller than 1 = first, bigger than the number of categories = last.
+     * @return product id to new display_order (empty when nothing moves or the category does not exist)
+     */
+    static Map<Long, Integer> planCategories(List<Row> rows, String category, int position) {
+        Map<String, List<Row>> byCategory = new LinkedHashMap<>(); // first appearance = current category order
+        for (Row r : rows) byCategory.computeIfAbsent(r.category(), k -> new ArrayList<>()).add(r);
+        if (!byCategory.containsKey(category)) return new LinkedHashMap<>();
+
+        List<String> order = new ArrayList<>(byCategory.keySet());
+        order.remove(category);
+        order.add(Math.max(0, Math.min(position - 1, order.size())), category);
+
+        Map<Long, Integer> changes = new LinkedHashMap<>();
+        int next = 0;
+        for (String c : order) {
+            for (Row r : byCategory.get(c)) {
+                if (r.order() != next) changes.put(r.id(), next);
+                next++;
+            }
+        }
+        return changes;
     }
 }
