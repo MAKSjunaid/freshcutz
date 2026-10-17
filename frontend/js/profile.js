@@ -189,7 +189,13 @@ window.ProfileSheet = (() => {
    *  longer sold, out of stock, or missing the size it was ordered in gets
    *  skipped and rolled into one summary toast instead of failing silently
    *  or one toast per item. */
-  function reorder(order) {
+  async function reorder(order) {
+    // The products of an old order may not be on the page (the shop loads a few at a time): fetch just those.
+    try {
+      await window.Storefront.ensureProducts(order.items.map((i) => i.productId));
+    } catch {
+      /* offline: whatever isn't known is reported as unavailable below */
+    }
     const unavailable = [];
     const toAdd = []; // { product, variant, quantity } — figured out before touching the cart at all
 

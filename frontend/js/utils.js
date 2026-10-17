@@ -54,6 +54,14 @@ const Utils = (() => {
     return `${window.FRESHCUTZ_API_BASE}${imageUrl}`;
   }
 
+  /** The ~25 KB card-size copy of a product photo (the customer website's product cards and cart use this instead
+   * of the full-size original). Photos that aren't served by this backend (old disk paths) are left as they are. */
+  function mediumImageUrl(imageUrl) {
+    const url = resolveImageUrl(imageUrl);
+    if (!url.includes("/api/products/") || !url.includes("/image") || /[?&]s=/.test(url)) return url;
+    return url + (url.includes("?") ? "&" : "?") + "s=m";
+  }
+
   function validatePhone(value) {
     const digits = (value || "").replace(/\D/g, "");
     return digits.length >= 10;
@@ -75,6 +83,7 @@ const Utils = (() => {
     escapeHtml,
     discountPercent,
     resolveImageUrl,
+    mediumImageUrl,
     validatePhone,
     normalizePhone,
   };
