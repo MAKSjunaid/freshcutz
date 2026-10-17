@@ -47,6 +47,9 @@ public final class StorefrontCache {
     /** Admin thumbnails are tiny (a few KB each), so a small budget holds hundreds of them. */
     private static final long THUMB_CACHE_MAX_BYTES = 6L * 1024 * 1024;
     private static final int THUMB_MAX_ENTRY_BYTES = 200 * 1024;
+    /** Customer-card photos (about 20-30 KB each): room for several hundred of the most recently viewed ones. */
+    private static final long MEDIUM_CACHE_MAX_BYTES = 12L * 1024 * 1024;
+    private static final int MEDIUM_MAX_ENTRY_BYTES = 512 * 1024;
     /** Safety cap on cached admin answers (category list + one list per category). */
     private static final int ADMIN_MAX_ENTRIES = 200;
 
@@ -131,6 +134,7 @@ public final class StorefrontCache {
     private static final AtomicLong IMAGE_VERSION = new AtomicLong();
     private static final ImageLru IMAGES = new ImageLru(IMAGE_CACHE_MAX_BYTES, IMAGE_MAX_ENTRY_BYTES);
     private static final ImageLru THUMBS = new ImageLru(THUMB_CACHE_MAX_BYTES, THUMB_MAX_ENTRY_BYTES);
+    private static final ImageLru MEDIUMS = new ImageLru(MEDIUM_CACHE_MAX_BYTES, MEDIUM_MAX_ENTRY_BYTES);
 
     private static final AtomicLong ADMIN_VERSION = new AtomicLong();
     private static final Map<String, Entry<Object>> ADMIN = new HashMap<>();
@@ -175,6 +179,16 @@ public final class StorefrontCache {
         return loaded;
     }
 
+    /** One customer-card photo (about 480 px), or runs {@code loader} on a miss. */
+    public static ProductImage medium(Long id, Supplier<ProductImage> loader) {
+        ProductImage hit = MEDIUMS.get(id);
+        if (hit != null) return hit;
+        long v = IMAGE_VERSION.get(); // read BEFORE the query
+        ProductImage loaded = loader.get();
+        MEDIUMS.put(id, loaded, IMAGE_VERSION, v);
+        return loaded;
+    }
+
     /** An admin Products-page answer (category list or one category's products), or runs {@code loader} when stale.
      * Dropped as soon as any product changes. */
     @SuppressWarnings("unchecked")
@@ -206,6 +220,7 @@ public final class StorefrontCache {
                 IMAGE_VERSION.incrementAndGet(); // before the remove, so an in-flight read can't re-add it
                 IMAGES.remove(id);
                 THUMBS.remove(id);
+                MEDIUMS.remove(id);
             }
         });
     }

@@ -34,6 +34,7 @@ public class ProductService {
     /** A preview bigger than this is not stored (it only happens for a photo that could not be shrunk).
      * (Previews are normally ProductImageProcessor.THUMB_MAX_BYTES or less.) */
     private static final int MAX_STORED_THUMB_BYTES = 4096;
+    private static final int MAX_STORED_MEDIUM_BYTES = 120 * 1024;
 
     private final ProductRepository productRepository;
     private final JdbcTemplate jdbc;
@@ -195,12 +196,14 @@ public class ProductService {
     @Transactional
     public ProductResponse updateImage(Long id, byte[] imageData, String contentType) {
         byte[] thumb = makeThumb(imageData, contentType);
-        int rows = jdbc.update("UPDATE products SET image_data = ?, image_content_type = ?, preview_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        byte[] medium = makeMedium(imageData, contentType);
+        int rows = jdbc.update("UPDATE products SET image_data = ?, image_content_type = ?, preview_data = ?, medium_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 ps -> {
                     ps.setBytes(1, imageData);
                     ps.setString(2, contentType);
                     if (thumb == null) ps.setNull(3, Types.BINARY); else ps.setBytes(3, thumb);
-                    ps.setLong(4, id);
+                    if (medium == null) ps.setNull(4, Types.BINARY); else ps.setBytes(4, medium);
+                    ps.setLong(5, id);
                 });
         if (rows == 0) throw new ResourceNotFoundException("Product " + id + " not found");
         StorefrontCache.productChanged(id); // photo changed: drop the cached photo + thumbnail too
@@ -211,6 +214,33 @@ public class ProductService {
     private byte[] makeThumb(byte[] photo, String contentType) {
         ProductImageProcessor.ProcessedImage small = imageProcessor.thumbnail(photo, contentType);
         return small.data().length <= MAX_STORED_THUMB_BYTES ? small.data() : null;
+    }
+
+    /** The customer-card version of a photo, or null when it can't be made smaller (then the photo itself is used). */
+    private byte[] makeMedium(byte[] photo, String contentType) {
+        ProductImageProcessor.ProcessedImage m = imageProcessor.medium(photo, contentType);
+        return m != null && m.data().length <= MAX_STORED_MEDIUM_BYTES ? m.data() : null;
+    }
+
+    /** The photo as the customer website's product cards show it (about 480 px, roughly 20-30 KB). Read from its
+     * own database column and kept in memory afterwards. A photo that was uploaded before this existed gets it
+     * made ONCE from the full photo and saved, never again. A photo that can't be shrunk (e.g. WEBP, or already
+     * small) is simply served as it is. Returns null when the product has no photo. */
+    public StorefrontCache.ProductImage getMedium(Long id) {
+        return StorefrontCache.medium(id, () -> {
+            List<byte[]> stored = jdbc.query("SELECT medium_data FROM products WHERE id = ?", (rs, i) -> rs.getBytes(1), id);
+            if (!stored.isEmpty() && stored.get(0) != null) {
+                return new StorefrontCache.ProductImage(stored.get(0), "image/jpeg");
+            }
+            StorefrontCache.ProductImage full = StorefrontCache.peekImage(id);
+            if (full == null) full = readImage(id);
+            if (full == null) return null;
+            byte[] medium = makeMedium(full.data(), full.contentType());
+            if (medium == null) return full; // can't (or needn't) be shrunk: serve the photo itself
+            // never overwrites a version that a photo upload saved in the meantime
+            jdbc.update("UPDATE products SET medium_data = ? WHERE id = ? AND medium_data IS NULL", medium, id);
+            return new StorefrontCache.ProductImage(medium, "image/jpeg");
+        });
     }
 
     /** A product's photo for ProductController's image endpoint, served from
