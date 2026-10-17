@@ -78,7 +78,7 @@
   }
 
   function cartItemHtml(item) {
-    const img = Utils.resolveImageUrl(item.imageUrl);
+    const img = Utils.mediumImageUrl(item.imageUrl);
     return `
     <div class="cart-item" data-key="${item.productId}:${item.variant}">
       <img src="${img}" alt="${Utils.escapeHtml(item.name)}" onerror="this.style.visibility='hidden'" />
