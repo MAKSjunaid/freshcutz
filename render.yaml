@@ -36,6 +36,14 @@ services:
       # URL (e.g. https://freshcutz-frontend.onrender.com).
       - key: CORS_ALLOWED_ORIGINS
         value: "*"
+      # Backup e-mail (see application.properties). Fill these in on Render yourself;
+      # BACKUP_INTERVAL_HOURS: 1 = hourly (testing), 24 = daily, 240 = every 10 days, 0 = off.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: BACKUP_EMAIL_TO
+        sync: false
+      - key: BACKUP_INTERVAL_HOURS
+        sync: false
 
   # ---- Frontend: plain HTML/CSS/JS, no build step -----------------------
   # Static sites don't take a "plan" field at all — there's no paid tier
