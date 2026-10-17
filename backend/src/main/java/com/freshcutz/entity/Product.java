@@ -79,6 +79,14 @@ public class Product {
     @Column(name = "preview_data", length = 16 * 1024)
     private byte[] previewData;
 
+    /** The photo at the size the customer website's product cards need (about 480 px, roughly 20-30 KB), made from
+     * the full photo so every customer page load downloads a fraction of the bytes. Made when a photo is uploaded;
+     * a photo that was added before this column existed gets it made once, the first time a customer asks for it.
+     * Null = not made yet. */
+    @JdbcTypeCode(SqlTypes.VARBINARY)
+    @Column(name = "medium_data", length = 128 * 1024)
+    private byte[] mediumData;
+
     @Column(name = "variant1_label", nullable = false, length = 40)
     private String variant1Label;
 

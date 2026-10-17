@@ -51,13 +51,15 @@ public class ProductController {
      * safe to tell browsers to cache this response for a long time —
      * replacing the photo changes the URL, it never serves stale bytes.
      * With `&s=thumb` it returns a small preview instead (used by the
-     * admin Products page, which shows many photos at once). */
+     * admin Products page, which shows many photos at once), and with
+     * `&s=m` a medium-size copy (about 480 px / 25 KB) that the customer
+     * website's product cards use instead of the full photo. */
     @GetMapping("/{id}/image")
     public ResponseEntity<byte[]> image(@PathVariable Long id,
                                         @RequestParam(value = "s", required = false) String size) {
         StorefrontCache.ProductImage image = "thumb".equals(size)
                 ? productService.getThumb(id)
-                : productService.getImage(id);
+                : "m".equals(size) ? productService.getMedium(id) : productService.getImage(id);
         if (image == null) {
             return ResponseEntity.notFound().build();
         }

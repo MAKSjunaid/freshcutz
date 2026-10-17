@@ -7,8 +7,12 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -36,6 +40,22 @@ public class SseBroadcastService {
     private final List<SseEmitter> productEmitters = new CopyOnWriteArrayList<>();
     private final List<SseEmitter> statusEmitters = new CopyOnWriteArrayList<>();
     private final List<SseEmitter> siteEmitters = new CopyOnWriteArrayList<>();
+    /** Storefront tabs that only want to hear "the catalog changed" (no data is pushed; they ask for what they show). */
+    private final List<SseEmitter> catalogEmitters = new CopyOnWriteArrayList<>();
+    /** What a tab is told after an edit: the catalog version it brings the tab up to, and the message itself. */
+    public record CatalogUpdate(String version, Object payload) {}
+
+    /** The catalog version each connected tab was last told about, so every tab gets exactly "what changed since the
+     * version YOU have" (even when the catalog was rebuilt a few times in between). */
+    private final Map<SseEmitter, String> catalogKnown = new ConcurrentHashMap<>();
+    private volatile Supplier<String> catalogVersion;
+    private volatile Function<String, CatalogUpdate> catalogUpdate;
+
+    /** Set by StorefrontCatalogService: the current version, and "what changed since version X" (null = nothing). */
+    public void setCatalogProviders(Supplier<String> version, Function<String, CatalogUpdate> update) {
+        this.catalogVersion = version;
+        this.catalogUpdate = update;
+    }
 
     /** Registers a new subscriber and immediately sends it the current
      * catalog, so a tab that just connected does not have to wait for the
@@ -43,6 +63,34 @@ public class SseBroadcastService {
     public SseEmitter subscribeProducts(List<ProductResponse> initial) {
         SseEmitter emitter = register(productEmitters);
         send(emitter, "products", initial, productEmitters);
+        return emitter;
+    }
+
+    /** A customer tab that loads its products in small pieces. It is told the catalog's version when it connects (so
+     * it never has to ask "did anything change?") and, after every edit, exactly WHAT changed (a few ids — a
+     * handful of bytes, the same for everybody). It then fetches only those products, and only if it holds them.
+     *
+     * <p>{@code since} = the catalog version the tab already holds (a tab coming back after being hidden, or
+     * reconnecting). It is brought up to date right here on the stream — it is sent just what changed since that
+     * version — so it needs no separate request. */
+    public SseEmitter subscribeCatalogChanges(String since) {
+        SseEmitter emitter = register(catalogEmitters);
+        String version = null;
+        try {
+            Supplier<String> provider = catalogVersion;
+            if (provider != null) version = provider.get();
+        } catch (Exception ignored) {
+            // the tab then checks the version itself
+        }
+        if (version != null) {
+            boolean behind = since != null && !since.isBlank() && !since.equals(version);
+            catalogKnown.put(emitter, behind ? since : version);
+            if (!behind) send(emitter, "state", Map.of("version", version), catalogEmitters);
+            // behind (or an edit happened a moment ago): send what changed since the version the tab holds
+            notifyCatalogChanged();
+        } else {
+            sendComment(emitter, catalogEmitters); // opens the stream right away
+        }
         return emitter;
     }
 
@@ -72,8 +120,30 @@ public class SseBroadcastService {
     /** Same as broadcastProducts(), but the catalog is only read (from the database) when at least one storefront
      * tab is actually listening — with nobody connected, an admin edit costs no extra query. */
     public void broadcastProductsIfAny(Supplier<List<ProductResponse>> catalog) {
-        if (productEmitters.isEmpty()) return;
+        notifyCatalogChanged(); // tabs that load in pieces just hear "changed" (a few bytes, no catalog read)
+        if (productEmitters.isEmpty()) return; // older open pages still get the whole catalog pushed
         broadcastProducts(catalog.get());
+    }
+
+    /** Tells every tab that loads its products in small pieces that the catalog changed. */
+    public synchronized void notifyCatalogChanged() { // one at a time, so a tab's messages never overlap or cross
+        Function<String, CatalogUpdate> provider = catalogUpdate;
+        if (catalogEmitters.isEmpty() || provider == null) return; // nobody listening: nothing to work out
+        Map<String, CatalogUpdate> bySince = new HashMap<>(); // tabs on the same version share one message
+        for (SseEmitter emitter : catalogEmitters) {
+            String since = catalogKnown.get(emitter);
+            if (since == null) continue;
+            CatalogUpdate update;
+            try {
+                if (!bySince.containsKey(since)) bySince.put(since, provider.apply(since));
+                update = bySince.get(since);
+            } catch (Exception e) {
+                continue; // that tab will ask for itself when it next notices
+            }
+            if (update == null) continue; // this tab is already up to date
+            catalogKnown.put(emitter, update.version());
+            send(emitter, "changed", update.payload(), catalogEmitters);
+        }
     }
 
     public void broadcastProducts(List<ProductResponse> products) {
@@ -103,13 +173,22 @@ public class SseBroadcastService {
         for (SseEmitter emitter : siteEmitters) {
             sendComment(emitter, siteEmitters);
         }
+        for (SseEmitter emitter : catalogEmitters) {
+            sendComment(emitter, catalogEmitters);
+        }
     }
 
     private SseEmitter register(List<SseEmitter> emitters) {
         SseEmitter emitter = new SseEmitter(EMITTER_TIMEOUT_MS);
-        emitter.onCompletion(() -> emitters.remove(emitter));
+        emitter.onCompletion(() -> {
+            emitters.remove(emitter);
+            catalogKnown.remove(emitter);
+        });
         emitter.onTimeout(emitter::complete);
-        emitter.onError(e -> emitters.remove(emitter));
+        emitter.onError(e -> {
+            emitters.remove(emitter);
+            catalogKnown.remove(emitter);
+        });
         emitters.add(emitter);
         return emitter;
     }
@@ -137,6 +216,7 @@ public class SseBroadcastService {
             // connection is gone" can never again take the whole
             // broadcast down.
             emitters.remove(emitter);
+            catalogKnown.remove(emitter);
         }
     }
 
