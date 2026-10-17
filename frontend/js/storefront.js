@@ -308,6 +308,14 @@
     getAllProducts: () => allProducts,
     setAllProducts: (products) => { allProducts = products; },
     getActiveCategory: () => activeCategory,
+    // Used once by storefront-sync.js to open the shop on the category the admin chose (see "default category").
+    setActiveCategory: (name, redraw) => {
+      activeCategory = name;
+      if (redraw) {
+        renderCategories();
+        renderGrid();
+      }
+    },
     cardVariant,
     grid,
     renderCategories,
