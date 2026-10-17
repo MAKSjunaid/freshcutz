@@ -5,6 +5,7 @@ import com.freshcutz.entity.SiteCustomization;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,7 +14,9 @@ import java.util.function.Supplier;
 
 /**
  * In-memory copies of the things every customer page load asks for: the
- * product list, product photos and the shop logo.
+ * product list, product photos and the shop logo. (Plus, for the admin
+ * Products page: the category list, each category's products and small
+ * photo thumbnails.)
  *
  * Why: Neon's free plan bills by the hours its database is awake, and any
  * query keeps it awake for 5 more minutes. These values only change when an
@@ -41,6 +44,11 @@ public final class StorefrontCache {
     private static final long IMAGE_CACHE_MAX_BYTES = 16L * 1024 * 1024;
     /** A single photo bigger than this is served but never kept. */
     private static final int IMAGE_MAX_ENTRY_BYTES = 1024 * 1024;
+    /** Admin thumbnails are tiny (a few KB each), so a small budget holds hundreds of them. */
+    private static final long THUMB_CACHE_MAX_BYTES = 6L * 1024 * 1024;
+    private static final int THUMB_MAX_ENTRY_BYTES = 200 * 1024;
+    /** Safety cap on cached admin answers (category list + one list per category). */
+    private static final int ADMIN_MAX_ENTRIES = 200;
 
     /** A product photo as stored in the database. */
     public record ProductImage(byte[] data, String contentType) {}
@@ -80,12 +88,52 @@ public final class StorefrontCache {
         }
     }
 
+    /** A size-limited, least-recently-used set of photos. */
+    private static final class ImageLru {
+        private final long maxBytes;
+        private final int maxEntryBytes;
+        private final Map<Long, ProductImage> map = new LinkedHashMap<>(16, 0.75f, true);
+        private long bytes; // guarded by this
+
+        ImageLru(long maxBytes, int maxEntryBytes) {
+            this.maxBytes = maxBytes;
+            this.maxEntryBytes = maxEntryBytes;
+        }
+
+        synchronized ProductImage get(Long id) {
+            return map.get(id);
+        }
+
+        /** Keeps the photo only if nothing changed since {@code seenVersion} was read. */
+        synchronized void put(Long id, ProductImage image, AtomicLong version, long seenVersion) {
+            if (image == null || image.data() == null || image.data().length > maxEntryBytes) return;
+            if (version.get() != seenVersion) return;
+            ProductImage old = map.put(id, image);
+            if (old != null) bytes -= old.data().length;
+            bytes += image.data().length;
+            var it = map.entrySet().iterator();
+            while (bytes > maxBytes && it.hasNext()) {
+                var eldest = it.next();
+                bytes -= eldest.getValue().data().length;
+                it.remove();
+            }
+        }
+
+        synchronized void remove(Long id) {
+            ProductImage old = map.remove(id);
+            if (old != null) bytes -= old.data().length;
+        }
+    }
+
     private static final Slot<List<ProductResponse>> PRODUCTS = new Slot<>();
     private static final Slot<SiteCustomization> LOGO = new Slot<>();
 
     private static final AtomicLong IMAGE_VERSION = new AtomicLong();
-    private static final Map<Long, ProductImage> IMAGES = new LinkedHashMap<>(16, 0.75f, true); // LRU
-    private static long imageBytes; // guarded by IMAGES
+    private static final ImageLru IMAGES = new ImageLru(IMAGE_CACHE_MAX_BYTES, IMAGE_MAX_ENTRY_BYTES);
+    private static final ImageLru THUMBS = new ImageLru(THUMB_CACHE_MAX_BYTES, THUMB_MAX_ENTRY_BYTES);
+
+    private static final AtomicLong ADMIN_VERSION = new AtomicLong();
+    private static final Map<String, Entry<Object>> ADMIN = new HashMap<>();
 
     private StorefrontCache() {}
 
@@ -104,42 +152,60 @@ public final class StorefrontCache {
     /** One product photo, or runs {@code loader} on a miss. A photo is only kept
      * if nothing changed while it was being read. */
     public static ProductImage image(Long id, Supplier<ProductImage> loader) {
-        synchronized (IMAGES) {
-            ProductImage hit = IMAGES.get(id);
-            if (hit != null) return hit;
-        }
+        ProductImage hit = IMAGES.get(id);
+        if (hit != null) return hit;
         long v = IMAGE_VERSION.get(); // read BEFORE the query
         ProductImage loaded = loader.get();
-        if (loaded != null && loaded.data() != null && loaded.data().length <= IMAGE_MAX_ENTRY_BYTES) {
-            synchronized (IMAGES) {
-                if (IMAGE_VERSION.get() == v) {
-                    ProductImage old = IMAGES.put(id, loaded);
-                    if (old != null) imageBytes -= old.data().length;
-                    imageBytes += loaded.data().length;
-                    var it = IMAGES.entrySet().iterator();
-                    while (imageBytes > IMAGE_CACHE_MAX_BYTES && it.hasNext()) {
-                        var eldest = it.next();
-                        imageBytes -= eldest.getValue().data().length;
-                        it.remove();
-                    }
-                }
+        IMAGES.put(id, loaded, IMAGE_VERSION, v);
+        return loaded;
+    }
+
+    /** The full-size photo if it happens to be in memory already — never loads anything. */
+    public static ProductImage peekImage(Long id) {
+        return IMAGES.get(id);
+    }
+
+    /** One small admin thumbnail, or runs {@code loader} on a miss. */
+    public static ProductImage thumb(Long id, Supplier<ProductImage> loader) {
+        ProductImage hit = THUMBS.get(id);
+        if (hit != null) return hit;
+        long v = IMAGE_VERSION.get(); // read BEFORE the query
+        ProductImage loaded = loader.get();
+        THUMBS.put(id, loaded, IMAGE_VERSION, v);
+        return loaded;
+    }
+
+    /** An admin Products-page answer (category list or one category's products), or runs {@code loader} when stale.
+     * Dropped as soon as any product changes. */
+    @SuppressWarnings("unchecked")
+    public static <T> T admin(String key, Supplier<T> loader) {
+        synchronized (ADMIN) {
+            Entry<Object> e = ADMIN.get(key);
+            if (e != null && e.version() == ADMIN_VERSION.get()
+                    && System.currentTimeMillis() - e.at() < TTL_MS) {
+                return (T) e.value();
             }
         }
-        return loaded;
+        long v = ADMIN_VERSION.get(); // read BEFORE the query
+        T value = loader.get();
+        synchronized (ADMIN) {
+            if (ADMIN.size() >= ADMIN_MAX_ENTRIES) ADMIN.clear();
+            ADMIN.put(key, new Entry<Object>(value, v, System.currentTimeMillis()));
+        }
+        return value;
     }
 
     // ---- invalidation (waits for the edit to commit) --------------------
 
-    /** A product was created, changed or deleted. */
+    /** A product was created, changed or deleted. {@code id} = its photo may have changed too; null = only the list did. */
     public static void productChanged(Long id) {
         afterCompletion(() -> {
             PRODUCTS.bump();
-            IMAGE_VERSION.incrementAndGet(); // before the remove, so an in-flight read can't re-add it
+            ADMIN_VERSION.incrementAndGet();
             if (id != null) {
-                synchronized (IMAGES) {
-                    ProductImage old = IMAGES.remove(id);
-                    if (old != null) imageBytes -= old.data().length;
-                }
+                IMAGE_VERSION.incrementAndGet(); // before the remove, so an in-flight read can't re-add it
+                IMAGES.remove(id);
+                THUMBS.remove(id);
             }
         });
     }

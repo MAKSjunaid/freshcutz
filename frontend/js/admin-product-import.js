@@ -43,7 +43,7 @@
       <button class="pi-item" type="button" role="menuitem" id="piTemplateBtn"><b>📄 Download template</b><span>Excel sheet with one sample row to fill in</span></button>
       <button class="pi-item" type="button" role="menuitem" id="piImportBtn"><b>⬆ Import products</b><span>Add many products from an Excel sheet</span></button>
       <button class="pi-item" type="button" role="menuitem" id="piPhotosBtn"><b>🖼 Add photos</b><span>Many photos at once, matched by file name</span></button>
-      <button class="pi-item" type="button" role="menuitem" id="piSelectBtn"><b>☑ Select products</b><span>Hide, out of stock, category, prices or delete many at once</span></button>
+      <button class="pi-item" type="button" role="menuitem" id="piSelectBtn"><b>☑ Select products</b><span>Tick products from one or more categories, then hide, out of stock, move or delete them</span></button>
       <button class="pi-item" type="button" role="menuitem" id="piExportBtn"><b>📥 Download all products</b><span>Your whole catalog as an Excel file</span></button>
     </div>
     <input type="file" id="piXlsx" accept=".xlsx" hidden />

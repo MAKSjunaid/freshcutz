@@ -9,6 +9,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
 
 /**
  * Pushes product-catalog and store-status changes to subscribed storefront
@@ -66,6 +67,13 @@ public class SseBroadcastService {
         for (SseEmitter emitter : siteEmitters) {
             send(emitter, "site", site, siteEmitters);
         }
+    }
+
+    /** Same as broadcastProducts(), but the catalog is only read (from the database) when at least one storefront
+     * tab is actually listening — with nobody connected, an admin edit costs no extra query. */
+    public void broadcastProductsIfAny(Supplier<List<ProductResponse>> catalog) {
+        if (productEmitters.isEmpty()) return;
+        broadcastProducts(catalog.get());
     }
 
     public void broadcastProducts(List<ProductResponse> products) {

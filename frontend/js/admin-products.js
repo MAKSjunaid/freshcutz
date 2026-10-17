@@ -1,22 +1,54 @@
-/* Products tab: list, add/edit form sheet, enable toggle, photo upload, delete. */
+/* Products tab: categories first. Opening the tab loads only the category list (one small query);
+ * tapping a category loads just that category's products. Photos are small thumbnails, loaded lazily.
+ * Also: add/edit form sheet, enable / out-of-stock toggles, photo upload, delete. */
 
 window.AdminProducts = (() => {
   const list = document.getElementById("productsList");
   const sheetRoot = document.getElementById("sheetRoot");
-  let products = [];
-  // Whether the catalog has been fetched at least once this login session.
-  // Unlike Orders, nothing outside this admin's own actions normally
-  // changes the product catalog, and every one of those actions (toggle,
-  // toggle-stock, delete, photo upload) already updates `products` and the
-  // DOM locally below — so once loaded, a plain tab visit never needs to
-  // ask the server again. Reset on logout so a later login always starts
-  // from a real fetch rather than carrying over a stale/empty catalog
-  // from whoever was signed in before (this is a single-page app — logout
-  // doesn't reload the page).
-  let loaded = false;
+
+  const CATS_URL = "/api/admin/products/categories";
+  const byUrl = (name) => `/api/admin/products/by-category?name=${encodeURIComponent(name)}`;
+
+  // cats    = [{ name, total, hidden, outOfStock }] from the server ("" = products with no category); null = not loaded yet
+  // cache   = category name -> its products, kept while you move around, so opening a category you already saw costs nothing
+  // open    = names of the expanded categories (tap a tile to open / close it; several can be open at once)
+  let cats = null;
+  const cache = new Map();
+  const open = new Set();
+  let lastOpened = null; // the most recently opened category (the "+" button starts in it)
+  let refreshSeq = 0; // only the newest refresh draws its answer
+  let epoch = 0; // bumped when cached data is thrown away, so an answer that was already on its way is not cached
+  let picked = new Map(); // category name -> how many of its products are ticked in select mode (set by admin-product-bulk.js)
+
   document.addEventListener("freshcutz:logout", () => {
-    loaded = false;
+    cats = null;
+    cache.clear();
+    open.clear();
+    lastOpened = null;
+    picked = new Map();
+    refreshSeq++;
+    epoch++;
+    list.innerHTML = "";
   });
+
+  // the few styles of the category tiles live here so no CSS file has to change
+  const style = document.createElement("style");
+  style.textContent = `
+    .ap-head{font-size:13px;color:var(--text-muted,#777);margin:2px 2px 10px}
+    .ap-cat{display:flex;align-items:center;gap:10px;width:100%;text-align:left;margin:0 0 10px;padding:14px 14px;border:0;border-radius:var(--r-md,14px);background:var(--bg-card,#fff);box-shadow:var(--shadow-sm,0 1px 3px rgba(0,0,0,.1));color:inherit;font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .ap-cat:active{transform:scale(.99)}
+    .ap-cat-main{flex:1;min-width:0}
+    .ap-cat-name{display:block;font-size:16px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ap-cat-meta{display:block;margin-top:2px;font-size:12.5px;color:var(--text-muted,#777)}
+    .ap-cat-go{flex:0 0 auto;font-size:22px;color:var(--text-muted,#999)}
+    .ap-cat{scroll-margin-top:120px}
+    .ap-cat.ap-open{margin-bottom:8px;box-shadow:var(--shadow-md,0 2px 8px rgba(0,0,0,.15))}
+    .ap-cat.ap-open .ap-cat-go{transform:rotate(90deg)}
+    .ap-cat-go{transition:transform .15s}
+    .ap-body{margin:0 0 14px;padding-left:6px;border-left:3px solid var(--gold,#c9a227)}
+    .ap-body .admin-product-card:last-child{margin-bottom:0}
+  `;
+  document.head.appendChild(style);
 
   // ---- category picker: used by the add/edit form and by Bulk actions -------
   // Not a native <select>: on iPhone, the native picker is still closing when the text box asks for focus, so
@@ -27,18 +59,12 @@ window.AdminProducts = (() => {
   const BOX = "border:1.5px solid #e3dcc9;border-radius:var(--r-sm);background:#fff;box-sizing:border-box;width:100%;";
   const CHEVRON = "url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23555' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E&quot;)";
 
-  /** Distinct categories in use (case-insensitive), alphabetical, with how many products use each. */
+  /** Every category (from the server's category list), alphabetical, with how many products each has. */
   function categoryList() {
-    const found = new Map();
-    for (const p of products) {
-      const name = (p.category || "").trim();
-      if (!name) continue;
-      const key = name.toLowerCase();
-      const hit = found.get(key);
-      if (hit) hit.n++;
-      else found.set(key, { name, n: 1 });
-    }
-    return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return (cats || [])
+      .filter((c) => c.name)
+      .map((c) => ({ name: c.name, n: c.total }))
+      .sort((x, y) => x.name.localeCompare(y.name));
   }
 
   /** HTML for the picker. `current` = the category to preselect; with none, the box shows the grey hint
@@ -142,11 +168,10 @@ window.AdminProducts = (() => {
   }
 
   function card(p) {
-    const img = Utils.resolveImageUrl(p.imageUrl);
     return `
     <div class="admin-product-card" data-id="${p.id}">
       <div class="admin-product-thumb">
-        <img src="${img}" alt="${Utils.escapeHtml(p.name)}" />
+        <img src="${thumbSrc(p.imageUrl)}" alt="${Utils.escapeHtml(p.name)}" loading="lazy" decoding="async" />
         <button class="thumb-upload-btn" data-action="upload">Change photo</button>
       </div>
       <div class="admin-product-main">
@@ -175,30 +200,216 @@ window.AdminProducts = (() => {
     </div>`;
   }
 
-  async function refresh(force = false) {
-    // force=true is only used right after Save (see saveBtn's click
-    // handler): saving can silently reposition every OTHER product's
-    // displayOrder too (see reposition() in ProductService), in a way
-    // only the server knows the full result of, so that one case still
-    // needs a real re-fetch to get the list back in the right order.
-    if (loaded && !force) return;
-    list.innerHTML = `<div class="skeleton" style="height:96px;margin-bottom:12px;"></div>`.repeat(3);
-    try {
-      products = await Api.get("/api/admin/products");
-      loaded = true;
-      list.innerHTML = products.length
-        ? products.map(card).join("")
-        : `<div class="empty-state"><div class="icon">🍗</div><p>No products yet — tap + to add your first one.</p></div>`;
-    } catch (err) {
-      list.innerHTML = `<div class="empty-state"><p>${Utils.escapeHtml(err.message)}</p></div>`;
+  // ---- screens -------------------------------------------------------
+
+  const catLabel = (name) => name || "Uncategorized";
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const skeleton = (n) => `<div class="skeleton" style="height:${n}px;margin-bottom:12px;"></div>`.repeat(3);
+  const emptyAll = `<div class="empty-state"><div class="icon">🍗</div><p>No products yet — tap + to add your first one.</p></div>`;
+
+  /** Small preview of a product's photo (a few KB). Old disk-path photos have no preview and are used as they are. */
+  function thumbSrc(imageUrl) {
+    const url = Utils.resolveImageUrl(imageUrl);
+    // "t=2" = the clearer preview size; it also makes browsers drop the older, blurrier previews they had saved
+    return url.includes("/api/products/") ? url + "&s=thumb&t=2" : url;
+  }
+
+  const catKey = (p) => (p.category || "").trim();
+
+  function metaLine(c) {
+    const n = picked.get(c.name) || 0;
+    return [
+      plural(c.total, "item"),
+      c.hidden ? `${c.hidden} hidden` : "",
+      c.outOfStock ? `${c.outOfStock} out of stock` : "",
+      n ? `✓ ${n} selected` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  /** The inside of an expanded category: its product cards (or a loading placeholder). */
+  function bodyHtml(name) {
+    const rows = cache.get(name);
+    if (!rows) return skeleton(96);
+    return rows.map(card).join("");
+  }
+
+  function tileHtml(c) {
+    const isOpen = open.has(c.name);
+    return `<button type="button" class="ap-cat${isOpen ? " ap-open" : ""}" data-cat="${Utils.escapeHtml(c.name)}" aria-expanded="${isOpen}">
+        <span class="ap-cat-main"><span class="ap-cat-name">${Utils.escapeHtml(catLabel(c.name))}</span>
+        <span class="ap-cat-meta">${Utils.escapeHtml(metaLine(c))}</span></span>
+        <span class="ap-cat-go" aria-hidden="true">›</span></button>${isOpen ? `<div class="ap-body" data-body>${bodyHtml(c.name)}</div>` : ""}`;
+  }
+
+  /** Draws the whole list: a tile per category, with every open one expanded right below its tile. */
+  function render() {
+    for (const name of [...open]) if (!(cats || []).some((c) => c.name === name)) open.delete(name); // emptied / renamed
+    if (lastOpened !== null && !open.has(lastOpened)) lastOpened = null;
+    if (!cats.length) {
+      list.innerHTML = emptyAll;
+      return;
     }
+    const total = cats.reduce((s, c) => s + c.total, 0);
+    list.innerHTML =
+      `<div class="ap-head">${plural(cats.length, "category").replace("categorys", "categories")} · ${plural(total, "product")}</div>` +
+      cats.map(tileHtml).join("");
+  }
+
+  const tileOf = (name) => [...list.querySelectorAll(".ap-cat")].find((t) => t.dataset.cat === name) || null;
+
+  function setTileMeta(name) {
+    const c = (cats || []).find((x) => x.name === name);
+    const meta = tileOf(name)?.querySelector(".ap-cat-meta");
+    if (!c || !meta) return;
+    const text = metaLine(c);
+    if (meta.textContent !== text) meta.textContent = text; // only when it changed (select mode watches the list)
+  }
+
+  function collapse(name) {
+    open.delete(name);
+    if (lastOpened === name) lastOpened = [...open].pop() ?? null;
+    const tile = tileOf(name);
+    if (!tile) return;
+    tile.classList.remove("ap-open");
+    tile.setAttribute("aria-expanded", "false");
+    const body = tile.nextElementSibling;
+    if (body && body.matches("[data-body]")) body.remove();
+  }
+
+  /** Tap a category: it opens right under its tile (loading its products if not seen yet); tap again to close it.
+   * Any number of categories can be open, so products from several can be ticked in select mode. */
+  async function toggleCategory(name) {
+    if (open.has(name)) return collapse(name);
+    open.add(name);
+    lastOpened = name;
+    const tile = tileOf(name);
+    if (!tile) return;
+    tile.classList.add("ap-open");
+    tile.setAttribute("aria-expanded", "true");
+    const body = document.createElement("div");
+    body.className = "ap-body";
+    body.dataset.body = "";
+    body.innerHTML = bodyHtml(name);
+    tile.after(body);
+    // keep the tapped tile in view
+    const top = tile.getBoundingClientRect().top;
+    if (top < 110 || top > window.innerHeight * 0.6) tile.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (cache.has(name)) return;
+
+    const ep = epoch;
+    try {
+      const rows = await Api.get(byUrl(name));
+      if (ep === epoch) cache.set(name, rows);
+      if (!body.isConnected || !open.has(name)) return;
+      cache.set(name, rows);
+      body.innerHTML = bodyHtml(name);
+    } catch (err) {
+      if (body.isConnected) body.innerHTML = `<div class="empty-state"><p>${Utils.escapeHtml(err.message)}</p></div>`;
+    }
+  }
+
+  /** Called when the Products tab is opened (loads the category list once) and after changes.
+   * force = read again; `names` = only those categories' lists are thrown away and re-read (the others are kept);
+   * `withCounts` false = the category tiles' numbers are known to be right, so they are not asked for again. */
+  async function refresh(force = false, names = null, withCounts = true) {
+    if (!force && cats) return;
+    const seq = ++refreshSeq;
+    if (force) {
+      if (names) names.forEach((n) => cache.delete(n));
+      else cache.clear();
+      epoch++;
+    }
+    const wanted = [...open].filter((n) => !cache.has(n)); // open categories whose list was thrown away
+    const needCounts = withCounts || !cats;
+    if (!cats) list.innerHTML = skeleton(72);
+    const ep = epoch;
+    try {
+      const [c, ...rows] = await Promise.all([needCounts ? Api.get(CATS_URL) : cats, ...wanted.map((n) => Api.get(byUrl(n)))]);
+      cats = c;
+      if (ep === epoch) wanted.forEach((n, i) => cache.set(n, rows[i]));
+      if (seq === refreshSeq) render();
+    } catch (err) {
+      if (seq === refreshSeq) list.innerHTML = `<div class="empty-state"><p>${Utils.escapeHtml(err.message)}</p></div>`;
+    }
+  }
+
+  const FLAGS = {
+    ENABLE: ["enabled", true],
+    DISABLE: ["enabled", false],
+    OUT_OF_STOCK: ["outOfStock", true],
+    IN_STOCK: ["outOfStock", false],
+  };
+
+  /** After a bulk action: show / hide, out of stock and delete are applied to what is already on the page (the server
+   * did exactly that to these products, so there is nothing to ask it); only a category move re-reads the two
+   * categories involved, because the new place in the list is decided by the server. */
+  async function afterBulk(action, ids, value) {
+    const prods = ids.map(findProduct);
+    if (!prods.every(Boolean)) return refresh(true); // something not loaded here: read everything again
+    if (action === "CATEGORY") {
+      return refresh(true, [...new Set([...prods.map(catKey), (value || "").trim()])]);
+    }
+    for (const p of prods) {
+      const cat = catKey(p);
+      if (action === "DELETE") {
+        cache.set(cat, (cache.get(cat) || []).filter((x) => x.id !== p.id));
+        adjust(cat, { total: -1, hidden: p.enabled ? 0 : -1, outOfStock: p.outOfStock ? -1 : 0 });
+      } else if (FLAGS[action]) {
+        const [field, on] = FLAGS[action];
+        if (p[field] === on) continue; // already like that
+        p[field] = on;
+        const sign = on ? 1 : -1;
+        adjust(cat, field === "enabled" ? { hidden: -sign } : { outOfStock: sign });
+      }
+    }
+    render();
+  }
+
+  /** Keeps the category tiles' numbers right after a toggle / delete without asking the server again. */
+  function adjust(name, d) {
+    const c = (cats || []).find((x) => x.name === name);
+    if (!c) return;
+    c.total += d.total || 0;
+    c.hidden += d.hidden || 0;
+    c.outOfStock += d.outOfStock || 0;
+    if (c.total <= 0) {
+      cats = cats.filter((x) => x !== c);
+      return;
+    }
+    setTileMeta(name);
+  }
+
+  /** Products of every open category, in the order the tiles are shown. */
+  const openRows = () => (cats || []).filter((c) => open.has(c.name)).flatMap((c) => cache.get(c.name) || []);
+
+  /** Any product that has been loaded (open or closed category). */
+  function findProduct(id) {
+    for (const rows of cache.values()) {
+      const hit = rows.find((p) => p.id === id);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  /** Select mode shows "✓ n selected" on each category tile. */
+  function setPicked(map) {
+    const old = picked;
+    picked = map;
+    for (const name of new Set([...old.keys(), ...map.keys()])) setTileMeta(name);
   }
 
   list.addEventListener("click", (e) => {
     const card = e.target.closest(".admin-product-card");
-    if (!card) return;
+    if (!card) {
+      const tile = e.target.closest(".ap-cat");
+      if (tile) toggleCategory(tile.dataset.cat);
+      return;
+    }
     const id = Number(card.dataset.id);
-    const product = products.find((p) => p.id === id);
+    const product = findProduct(id);
+    if (!product) return;
 
     if (e.target.closest('[data-action="upload"]')) {
       card.querySelector('[data-role="file-input"]').click();
@@ -213,16 +424,18 @@ window.AdminProducts = (() => {
     const card = e.target.closest(".admin-product-card");
     if (!card) return;
     const id = Number(card.dataset.id);
-    const product = products.find((p) => p.id === id);
+    const product = findProduct(id);
+    if (!product) return;
+    const cat = catKey(product);
 
     if (e.target.matches('[data-action="toggle"]')) {
       const enabled = e.target.checked;
       try {
         await Api.patch(`/api/admin/products/${id}/enabled`, { enabled });
         product.enabled = enabled;
-        // Patch just this card's badges in place — a full refresh() replaces
-        // the whole list's innerHTML, which was destroying the just-toggled
-        // (still-focused) checkbox and jumping the page back to the top.
+        adjust(cat, { hidden: enabled ? -1 : 1 });
+        // Patch just this card's badges in place — a full re-render would destroy the just-toggled
+        // (still-focused) checkbox and jump the page back to the top.
         card.querySelector('[data-role="status-badges"]').innerHTML = statusBadgesHtml(product);
         Toast.show(enabled ? `${product.name} is now visible` : `${product.name} is now hidden`, "success");
       } catch (err) {
@@ -234,6 +447,7 @@ window.AdminProducts = (() => {
       try {
         await Api.patch(`/api/admin/products/${id}/out-of-stock`, { outOfStock });
         product.outOfStock = outOfStock;
+        adjust(cat, { outOfStock: outOfStock ? 1 : -1 });
         card.querySelector('[data-role="status-badges"]').innerHTML = statusBadgesHtml(product);
         Toast.show(outOfStock ? `${product.name} marked out of stock` : `${product.name} marked back in stock`, "success");
       } catch (err) {
@@ -248,13 +462,10 @@ window.AdminProducts = (() => {
       try {
         const updated = await Api.upload(`/api/admin/products/${id}/image`, formData);
         Toast.show("Photo updated", "success");
-        // Only this one product's image changed — nothing else in the
-        // catalog moved, and the response's imageUrl already carries a
-        // fresh cache-buster (?v=<updatedAt>, see ProductResponse), so
-        // swapping this card's <img> src straight from it shows the new
-        // photo immediately without re-fetching the whole list.
+        // Only this one photo changed, and the response's imageUrl carries a fresh cache-buster (?v=...),
+        // so swapping this card's <img> src shows the new photo without reloading anything.
         product.imageUrl = updated.imageUrl;
-        card.querySelector(".admin-product-thumb img").src = Utils.resolveImageUrl(updated.imageUrl);
+        card.querySelector(".admin-product-thumb img").src = thumbSrc(updated.imageUrl);
       } catch (err) {
         Toast.show(err.message, "error");
       }
@@ -263,25 +474,33 @@ window.AdminProducts = (() => {
 
   async function deleteProduct(product) {
     if (!confirm(`Delete "${product.name}"? This can't be undone.`)) return;
+    const cat = catKey(product);
     try {
       await Api.del(`/api/admin/products/${product.id}`);
       Toast.show("Product deleted", "success");
-      // Deleting doesn't reposition anything else (ProductService.delete
-      // just removes the row, no reindexing) — so the rest of the list
-      // is still exactly right as-is; just drop this one card locally
-      // instead of re-fetching the whole catalog for it.
-      products = products.filter((p) => p.id !== product.id);
-      list.querySelector(`.admin-product-card[data-id="${product.id}"]`)?.remove();
-      if (!products.length) {
-        list.innerHTML = `<div class="empty-state"><div class="icon">🍗</div><p>No products yet — tap + to add your first one.</p></div>`;
-      }
+      // Deleting doesn't move any other product, so just drop this one locally.
+      cache.set(cat, (cache.get(cat) || []).filter((p) => p.id !== product.id));
+      adjust(cat, { total: -1, hidden: product.enabled ? 0 : -1, outOfStock: product.outOfStock ? -1 : 0 });
+      render(); // a category left with no products disappears from the list
     } catch (err) {
       Toast.show(err.message, "error");
     }
   }
 
-  function openForm(product) {
+  async function openForm(product) {
     const isEdit = !!product;
+    if (!cats) {
+      try {
+        cats = await Api.get(CATS_URL);
+      } catch (err) {
+        Toast.show(err.message, "error");
+        return;
+      }
+    }
+    const rows = isEdit ? cache.get(catKey(product)) || [] : [];
+    const position = isEdit ? rows.findIndex((p) => p.id === product.id) + 1 : "";
+    // Adding while a category is open starts in that category (the one opened last); with none open, nothing is picked for you.
+    const startCategory = isEdit ? product.category : lastOpened || "";
     const body = `
       <form class="sheet-body" id="productForm">
         <div class="field">
@@ -294,7 +513,7 @@ window.AdminProducts = (() => {
         </div>
         <div class="field">
           <label>Category</label>
-          ${categoryFieldHtml(isEdit ? product.category : "")}
+          ${categoryFieldHtml(startCategory)}
         </div>
         <div class="field">
           <label>Size 1 label</label>
@@ -331,8 +550,8 @@ window.AdminProducts = (() => {
           </div>
         </div>
         <div class="field">
-          <label>Position (1 = shows first)</label>
-          <input name="displayOrder" type="number" min="1" value="${isEdit ? products.findIndex((p) => p.id === product.id) + 1 : products.length + 1}" />
+          <label>Position in its category (1 = shows first, empty = last)</label>
+          <input name="displayOrder" type="number" min="1" inputmode="numeric" placeholder="Last" value="${position}" />
         </div>
         ${!isEdit ? `<p class="hint">You can add a photo from the product list right after saving.</p>` : ""}
       </form>
@@ -360,13 +579,20 @@ window.AdminProducts = (() => {
 
     const form = sheetRoot.querySelector("#productForm");
     const saveBtn = sheetRoot.querySelector("#saveProductBtn");
+    let positionTouched = false;
+    form.querySelector('[name="displayOrder"]').addEventListener("input", () => (positionTouched = true));
+
     saveBtn.addEventListener("click", async (e) => {
       e.preventDefault();
       const data = new FormData(form);
+      const category = readCategory(form);
+      // The number shown is the product's place in its OLD category; if it was moved to another category without
+      // typing a new position, it simply goes to the end of the new one.
+      const moved = isEdit && category.toLowerCase() !== (product.category || "").trim().toLowerCase();
       const payload = {
         name: data.get("name")?.trim(),
         description: data.get("description")?.trim() || null,
-        category: readCategory(form) || null,
+        category: category || null,
         variant1Label: data.get("variant1Label")?.trim(),
         variant1Price: Number(data.get("variant1Price")),
         variant1Mrp: data.get("variant1Mrp") ? Number(data.get("variant1Mrp")) : null,
@@ -375,7 +601,7 @@ window.AdminProducts = (() => {
         variant2Mrp: hasV2.checked && data.get("variant2Mrp") ? Number(data.get("variant2Mrp")) : null,
         enabled: isEdit ? product.enabled : true,
         outOfStock: isEdit ? product.outOfStock : false,
-        displayOrder: Number(data.get("displayOrder")) || 0,
+        displayOrder: moved && !positionTouched ? 0 : Number(data.get("displayOrder")) || 0,
       };
 
       saveBtn.disabled = true;
@@ -388,7 +614,20 @@ window.AdminProducts = (() => {
         }
         Toast.show("Product saved", "success");
         close();
-        refresh(true);
+        const samePlace = isEdit && !moved && String(Number(data.get("displayOrder")) || 0) === String(position);
+        if (samePlace) {
+          // nothing moved (same category, same position): just show the new details — nothing to read again
+          Object.assign(product, {
+            name: payload.name, description: payload.description, category: payload.category,
+            variant1Label: payload.variant1Label, variant1Price: payload.variant1Price, variant1Mrp: payload.variant1Mrp,
+            variant2Label: payload.variant2Label, variant2Price: payload.variant2Price, variant2Mrp: payload.variant2Mrp,
+          });
+          const el = list.querySelector(`.admin-product-card[data-id="${product.id}"]`);
+          if (el) el.outerHTML = card(product);
+        } else {
+          // moved: re-read only the categories involved; the tile numbers only change when the category does
+          refresh(true, [...new Set(isEdit ? [catKey(product), category] : [category])], !isEdit || moved);
+        }
       } catch (err) {
         Toast.show(err.message, "error");
         saveBtn.disabled = false;
@@ -399,6 +638,17 @@ window.AdminProducts = (() => {
 
   document.getElementById("addProductFab").addEventListener("click", () => openForm(null));
 
-  // getAll + the category picker are also used by Bulk actions (admin-product-bulk.js)
-  return { refresh, getAll: () => products, categories: categoryList, categoryFieldHtml, bindCategoryField, readCategory };
+  // The category picker and the open category's products are also used by Bulk actions (admin-product-bulk.js)
+  return {
+    refresh,
+    afterBulk,
+    getAll: openRows,
+    find: findProduct,
+    hasProducts: () => (cats || []).length > 0,
+    setPicked,
+    categories: categoryList,
+    categoryFieldHtml,
+    bindCategoryField,
+    readCategory,
+  };
 })();

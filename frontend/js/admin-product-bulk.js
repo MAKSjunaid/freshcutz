@@ -1,10 +1,11 @@
 /* Products tab "Select products": tick many products, then change them all at once —
  * show / hide, out of stock / back in stock, category, or delete.
  *
- * While selecting, a bar covers the top of the screen: Cancel · "N selected" · Select all · Actions.
+ * While selecting, categories still open and close by tapping them, so products from several categories can
+ * be ticked in one go. A bar covers the top of the screen: Cancel · "N selected" · Select all · Actions.
  * The Actions button appears as soon as one product is ticked; it opens a list of everything you can do.
  *
- * Light on purpose: it works on the list the Products tab already loaded (no extra fetch to select),
+ * It works on products that are already loaded (no extra fetch to select),
  * sends ONE request per action (POST /api/admin/products/bulk), then refreshes the list once. */
 (() => {
   if (typeof Api === "undefined" || !window.AdminProducts) return;
@@ -53,18 +54,18 @@
   const actionsBtn = bar.querySelector('[data-pb="actions"]');
 
   const esc = (s) => Utils.escapeHtml(String(s));
-  const selected = new Set();
+  const selected = new Map(); // product id -> its category name
   let on = false;
   let busy = false;
   let observer = null;
 
-  const all = () => window.AdminProducts.getAll() || [];
-  const byId = (id) => all().find((p) => p.id === id);
+  const all = () => window.AdminProducts.getAll() || []; // products of the categories that are open now
+  const byId = (id) => window.AdminProducts.find(id);
 
   // ---- select mode on / off ------------------------------------------
   function start() {
     if (on) return;
-    if (!all().length) {
+    if (!window.AdminProducts.hasProducts()) {
       Toast.show("There are no products to select yet.", "error");
       return;
     }
@@ -74,8 +75,9 @@
     bar.hidden = false;
     paint();
     // the list is rebuilt after every refresh; tick the right cards again each time
+    // (also when a category is opened, its cards are new and need their ticks)
     observer = new MutationObserver(() => paint());
-    observer.observe(list, { childList: true });
+    observer.observe(list, { childList: true, subtree: true });
   }
 
   function stop() {
@@ -88,6 +90,7 @@
     bar.hidden = true;
     sheetRoot.innerHTML = "";
     list.querySelectorAll(".pb-sel").forEach((c) => c.classList.remove("pb-sel"));
+    window.AdminProducts.setPicked(new Map());
   }
 
   document.addEventListener("freshcutz:logout", stop);
@@ -98,15 +101,24 @@
 
   function updateBar() {
     const n = selected.size;
-    countEl.textContent = n ? `${n} selected` : "Tap products to select";
+    countEl.textContent = n ? `${n} selected` : "Open a category, tap products";
     actionsBtn.hidden = n === 0;
-    allBtn.textContent = n && n === all().length ? "Clear" : "Select all";
+    allBtn.textContent = allShownSelected() ? "Clear" : "Select all";
+    const perCategory = new Map();
+    for (const name of selected.values()) perCategory.set(name, (perCategory.get(name) || 0) + 1);
+    window.AdminProducts.setPicked(perCategory);
   }
 
-  /** Re-applies the ticks to the cards on screen and forgets products that no longer exist. */
+  /** True when there are products on screen and every one of them is ticked. */
+  function allShownSelected() {
+    const shown = all();
+    return shown.length > 0 && shown.every((p) => selected.has(p.id));
+  }
+
+  const catOf = (p) => (p.category || "").trim();
+
+  /** Re-applies the ticks to the cards on screen. */
   function paint() {
-    const ids = new Set(all().map((p) => p.id));
-    for (const id of [...selected]) if (!ids.has(id)) selected.delete(id);
     list.querySelectorAll(".admin-product-card").forEach((card) => {
       card.classList.toggle("pb-sel", selected.has(Number(card.dataset.id)));
     });
@@ -115,7 +127,7 @@
 
   function toggle(id) {
     if (selected.has(id)) selected.delete(id);
-    else selected.add(id);
+    else selected.set(id, catOf(byId(id) || {}));
     const card = list.querySelector(`.admin-product-card[data-id="${id}"]`);
     if (card) card.classList.toggle("pb-sel", selected.has(id));
     updateBar();
@@ -154,14 +166,14 @@
   };
 
   async function run(action, value) {
-    const ids = [...selected];
+    const ids = [...selected.keys()];
     setBusy(true);
     try {
       const r = await Api.post("/api/admin/products/bulk", { action, ids, value: value == null ? null : String(value) });
       const n = r.changed;
       Toast.show(n ? `${n} product${n === 1 ? "" : "s"} ${DONE[action]}` : "Nothing to change — they were already like that.", "success");
       if (action === "DELETE") selected.clear();
-      if (n) await window.AdminProducts.refresh(true);
+      if (n) await window.AdminProducts.afterBulk(action, ids, value);
       paint();
     } catch (err) {
       Toast.show(err.message, "error");
@@ -171,7 +183,7 @@
   }
 
   function names(max) {
-    const ns = [...selected].map((id) => byId(id)?.name).filter(Boolean);
+    const ns = [...selected.keys()].map((id) => byId(id)?.name).filter(Boolean);
     return ns.slice(0, max).join(", ") + (ns.length > max ? `, … and ${ns.length - max} more` : "");
   }
 
@@ -261,9 +273,9 @@
     const key = btn.dataset.pb;
     if (key === "cancel") return stop();
     if (key === "all") {
-      const ps = all();
-      if (selected.size === ps.length) selected.clear();
-      else ps.forEach((p) => selected.add(p.id));
+      if (allShownSelected() && selected.size) selected.clear();
+      else if (!all().length) Toast.show("Open a category first, then tap its products.", "error");
+      else all().forEach((p) => selected.set(p.id, catOf(p)));
       return paint();
     }
     if (key === "actions" && selected.size) return actionsSheet();

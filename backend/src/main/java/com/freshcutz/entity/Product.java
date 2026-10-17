@@ -71,6 +71,14 @@ public class Product {
     @Column(name = "image_content_type", length = 100)
     private String imageContentType;
 
+    /** A tiny (about 1 KB) JPEG preview of the photo, for the admin Products page, which shows photos only ~72px
+     * wide. Kept in its own column so the admin page never has to read the full photo from the database. Filled
+     * when a photo is uploaded (ProductService.updateImage), or the first time the admin page needs it for a
+     * photo that was added before this column existed. Null = not made yet. */
+    @JdbcTypeCode(SqlTypes.VARBINARY)
+    @Column(name = "preview_data", length = 16 * 1024)
+    private byte[] previewData;
+
     @Column(name = "variant1_label", nullable = false, length = 40)
     private String variant1Label;
 

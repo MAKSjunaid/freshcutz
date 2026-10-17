@@ -42,33 +42,33 @@ public class AdminProductController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ProductResponse create(@Valid @RequestBody ProductRequest request) {
-        ProductResponse response = productService.create(request);
+    public Map<String, Object> create(@Valid @RequestBody ProductRequest request) {
+        Long id = productService.create(request);
         broadcastCatalog();
-        return response;
+        return Map.of("id", id);
     }
 
     @PutMapping("/{id}")
-    public ProductResponse update(@PathVariable Long id, @Valid @RequestBody ProductRequest request) {
-        ProductResponse response = productService.update(id, request);
+    public Map<String, Object> update(@PathVariable Long id, @Valid @RequestBody ProductRequest request) {
+        productService.update(id, request);
         broadcastCatalog();
-        return response;
+        return Map.of("id", id);
     }
 
     @PatchMapping("/{id}/enabled")
-    public ProductResponse setEnabled(@PathVariable Long id, @RequestBody Map<String, Boolean> body) {
+    public Map<String, Object> setEnabled(@PathVariable Long id, @RequestBody Map<String, Boolean> body) {
         boolean enabled = Boolean.TRUE.equals(body.get("enabled"));
-        ProductResponse response = productService.setEnabled(id, enabled);
+        productService.setEnabled(id, enabled);
         broadcastCatalog();
-        return response;
+        return Map.of("id", id, "enabled", enabled); // the page already shows the new state; nothing to send back
     }
 
     @PatchMapping("/{id}/out-of-stock")
-    public ProductResponse setOutOfStock(@PathVariable Long id, @RequestBody Map<String, Boolean> body) {
+    public Map<String, Object> setOutOfStock(@PathVariable Long id, @RequestBody Map<String, Boolean> body) {
         boolean outOfStock = Boolean.TRUE.equals(body.get("outOfStock"));
-        ProductResponse response = productService.setOutOfStock(id, outOfStock);
+        productService.setOutOfStock(id, outOfStock);
         broadcastCatalog();
-        return response;
+        return Map.of("id", id, "outOfStock", outOfStock);
     }
 
     @PostMapping(value = "/{id}/image", consumes = "multipart/form-data")
@@ -110,8 +110,9 @@ public class AdminProductController {
      * above — reposition() inside ProductService.create()/update() can
      * also shift OTHER products' displayOrder, so this always re-reads
      * the full list rather than trying to patch just the one product
-     * that was directly touched. */
+     * that was directly touched. Only reads the catalog when a storefront
+     * tab is actually listening. */
     private void broadcastCatalog() {
-        broadcastService.broadcastProducts(productService.listForCustomers());
+        broadcastService.broadcastProductsIfAny(productService::listForCustomers);
     }
 }

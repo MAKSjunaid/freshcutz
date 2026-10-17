@@ -7,6 +7,7 @@ import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
+import javax.imageio.plugins.jpeg.JPEGImageWriteParam;
 import javax.imageio.stream.ImageOutputStream;
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -61,6 +62,14 @@ public class ProductImageProcessor {
      * for photographic content. */
     private static final float JPEG_QUALITY = 0.80f;
 
+    /** An admin thumbnail is never bigger than this many bytes (about 1 KB). The admin cards show the photo ~72px
+     * wide, so a small, soft preview is enough. To make them even smaller, lower this number (below ~800 they start
+     * to look blocky); for sharper, raise it (e.g. 1600 or 2000) — the sizes/qualities below adapt automatically. */
+    public static final int THUMB_MAX_BYTES = 1200;
+    /** Sides to try, biggest first, and for each the JPEG qualities to try, best first; the first that fits wins. */
+    private static final int[] THUMB_SIZES = {112, 96, 80, 72, 64, 56, 48, 40, 32};
+    private static final float[] THUMB_QUALITIES = {0.5f, 0.4f, 0.3f, 0.2f};
+
     /** Resizes (if needed) and re-compresses an uploaded photo. Returns
      * the original bytes/content type unchanged if ImageIO can't decode
      * them at all (an unsupported format, or not really an image) rather
@@ -81,20 +90,69 @@ public class ProductImageProcessor {
             return new ProcessedImage(original, originalContentType);
         }
 
-        BufferedImage scaled = scaleDown(source);
-        byte[] jpegBytes = toJpeg(scaled);
+        BufferedImage scaled = scaleDown(source, MAX_DIMENSION);
+        byte[] jpegBytes = toJpeg(scaled, JPEG_QUALITY);
         log.info("Compressed product photo: {} bytes ({}) -> {} bytes (image/jpeg)",
                 original.length, originalContentType, jpegBytes.length);
         return new ProcessedImage(jpegBytes, "image/jpeg");
     }
 
-    private BufferedImage scaleDown(BufferedImage source) {
+    /** A tiny square preview (centre of the photo, about 1 KB) for the admin Products page, which shows photos
+     * only ~72px wide. Tries a sharper/bigger version first and steps down until it fits in THUMB_MAX_BYTES. It is
+     * stored next to the photo (products.preview_data), so the admin page reads only about 1 KB per product
+     * from the database instead of the whole photo. A photo that can't be decoded (e.g. WEBP) is returned unchanged. */
+    public ProcessedImage thumbnail(byte[] stored, String storedContentType) {
+        BufferedImage source;
+        try {
+            source = ImageIO.read(new ByteArrayInputStream(stored));
+        } catch (IOException | RuntimeException e) {
+            return new ProcessedImage(stored, storedContentType);
+        }
+        if (source == null) {
+            return new ProcessedImage(stored, storedContentType);
+        }
+
+        int side = Math.min(source.getWidth(), source.getHeight());
+        BufferedImage square = source.getSubimage((source.getWidth() - side) / 2, (source.getHeight() - side) / 2, side, side);
+        byte[] smallest = null;
+        for (int size : THUMB_SIZES) {
+            BufferedImage small = scaleSmooth(square, Math.min(size, side));
+            for (float quality : THUMB_QUALITIES) {
+                byte[] jpeg = toJpeg(small, quality, true);
+                if (jpeg.length <= THUMB_MAX_BYTES) return new ProcessedImage(jpeg, "image/jpeg");
+                if (smallest == null || jpeg.length < smallest.length) smallest = jpeg;
+            }
+        }
+        return new ProcessedImage(smallest, "image/jpeg"); // practically never reached; still tiny
+    }
+
+    private BufferedImage scaleDown(BufferedImage source, int maxDimension) {
         int width = source.getWidth();
         int height = source.getHeight();
-        double scale = Math.min(1.0, MAX_DIMENSION / (double) Math.max(width, height));
-        int targetWidth = Math.max(1, (int) Math.round(width * scale));
-        int targetHeight = Math.max(1, (int) Math.round(height * scale));
+        double scale = Math.min(1.0, maxDimension / (double) Math.max(width, height));
+        return scaleTo(source, Math.max(1, (int) Math.round(width * scale)), Math.max(1, (int) Math.round(height * scale)));
+    }
 
+    /** Shrinks a square a lot without the harsh, noisy look of one big jump: halves it again and again, then
+     * makes the last small step. Smoother pictures also compress to far fewer bytes. */
+    private BufferedImage scaleSmooth(BufferedImage square, int size) {
+        BufferedImage current = square;
+        while (current.getWidth() / 2 >= size) {
+            int half = current.getWidth() / 2;
+            BufferedImage next = new BufferedImage(half, half, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = next.createGraphics();
+            try {
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                g.drawImage(current, 0, 0, half, half, null);
+            } finally {
+                g.dispose();
+            }
+            current = next;
+        }
+        return current.getWidth() == size ? current : scaleTo(current, size, size);
+    }
+
+    private BufferedImage scaleTo(BufferedImage source, int targetWidth, int targetHeight) {
         // TYPE_INT_RGB (no alpha channel) with a white fill first is what
         // correctly flattens a transparent PNG instead of it turning into
         // a black background once re-encoded as JPEG below.
@@ -113,7 +171,11 @@ public class ProductImageProcessor {
         return target;
     }
 
-    private byte[] toJpeg(BufferedImage image) {
+    private byte[] toJpeg(BufferedImage image, float quality) {
+        return toJpeg(image, quality, false);
+    }
+
+    private byte[] toJpeg(BufferedImage image, float quality, boolean optimizeTables) {
         Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpg");
         if (!writers.hasNext()) {
             // The JDK always ships a JPEG writer — reaching this would
@@ -125,7 +187,10 @@ public class ProductImageProcessor {
         try {
             ImageWriteParam params = writer.getDefaultWriteParam();
             params.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-            params.setCompressionQuality(JPEG_QUALITY);
+            params.setCompressionQuality(quality);
+            if (optimizeTables && params instanceof JPEGImageWriteParam jpegParams) {
+                jpegParams.setOptimizeHuffmanTables(true); // smaller file, same picture
+            }
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             try (ImageOutputStream ios = ImageIO.createImageOutputStream(out)) {

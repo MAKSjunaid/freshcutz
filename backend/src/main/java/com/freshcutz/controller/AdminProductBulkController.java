@@ -44,7 +44,7 @@ public class AdminProductBulkController {
         Map<String, Object> result = bulkService.apply(request.action(), request.ids(), request.value());
         if (((Number) result.get("changed")).intValue() > 0) {
             // one catalog push to open storefront tabs, after everything is saved
-            broadcastService.broadcastProducts(productService.listForCustomers());
+            broadcastService.broadcastProductsIfAny(productService::listForCustomers);
         }
         return result;
     }
